@@ -196,10 +196,23 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	corner(splash, 14)
 	new("UISizeConstraint", {MaxSize = Vector2.new(480, 100)}, splash)
 	local loadingText = label(splash, "NIC IS GAY", 36, Color3.new(1, 1, 1), Enum.Font.GothamBold)
-	loadingText.Size = UDim2.fromScale(1, 1)
+	loadingText.Size = UDim2.new(1, 0, 0, 65)
 	loadingText.TextXAlignment = Enum.TextXAlignment.Center
 	loadingText.TextScaled = true
 	new("UITextSizeConstraint", {MinTextSize = 12, MaxTextSize = 36}, loadingText)
+	local loadingStatus = label(splash, "SCRIPT IS LOADING.", 14, Color3.new(1, 1, 1))
+	loadingStatus.Position = UDim2.fromOffset(0, 65)
+	loadingStatus.Size = UDim2.new(1, 0, 0, 25)
+	loadingStatus.TextXAlignment = Enum.TextXAlignment.Center
+	task.spawn(function()
+		local messages = {"SCRIPT IS LOADING.", "LOADING..", "LOADING..."}
+		local index = 1
+		while alive and loading and splash.Parent do
+			loadingStatus.Text = messages[index]
+			index = index % #messages + 1
+			task.wait(0.6)
+		end
+	end)
 	local colors = {}
 	for index = 0, 6 do
 		table.insert(colors, ColorSequenceKeypoint.new(index / 6, Color3.fromHSV(index / 6, 1, 1)))
