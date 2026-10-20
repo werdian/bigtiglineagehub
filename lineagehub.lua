@@ -48,6 +48,7 @@ local function removeEntry(prompt)
 	entries[prompt] = nil
 	entry.highlight:Destroy()
 	entry.billboard:Destroy()
+	if entry.goldenBox then entry.goldenBox:Destroy() end
 end
 
 local function createEntry(prompt, categoryKey, target, anchor)
@@ -354,15 +355,44 @@ local function classify(prompt)
 end
 
 local function doorAvailable(prompt, now)
-	-- Enabled also reflects the game's equipped-container requirement.
-	if not prompt.Enabled or prompt:GetAttribute("Busy") then return false end
+	-- Golden event markers remain visible without an equipped bucket.
 	if prompt:GetAttribute("Golden") == true then
 		local halloween = ReplicatedStorage:FindFirstChild("Halloween")
 		local id = halloween and halloween:GetAttribute("GoldenId")
 		return not (type(id) == "string" and id ~= "" and player:GetAttribute("GoldClaimed") == id)
 	end
+	if not prompt.Enabled or prompt:GetAttribute("Busy") then return false end
 	local readyAt = prompt:GetAttribute("ReadyAt")
 	return type(readyAt) ~= "number" or readyAt <= now
+end
+
+
+local function updateGoldenBox(entry, visible)
+	if not visible then
+		if entry.goldenBox then entry.goldenBox.Visible = false end
+		return
+	end
+	local box = entry.goldenBox
+	if not box or not box.Parent then
+		box = Instance.new("BoxHandleAdornment")
+		box.Name = "LocalGoldenDoorBox"
+		box.AlwaysOnTop = true
+		box.ZIndex = 10
+		box.Color3 = Color3.fromRGB(255, 235, 40)
+		box.Transparency = 0.55
+		box.Parent = controller
+		entry.goldenBox = box
+	end
+	local bounds, size
+	if entry.target:IsA("Model") then
+		bounds, size = entry.target:GetBoundingBox()
+	else
+		bounds, size = entry.target.CFrame, entry.target.Size
+	end
+	box.Adornee = entry.anchor
+	box.CFrame = entry.anchor.CFrame:ToObjectSpace(bounds)
+	box.Size = size + Vector3.new(0.12, 0.12, 0.12)
+	box.Visible = true
 end
 
 local function renderEntry(prompt, entry, root, now)
@@ -379,9 +409,15 @@ local function renderEntry(prompt, entry, root, now)
 		entry.billboard.Size = golden and UDim2.fromOffset(240, 72) or UDim2.fromOffset(160, 32)
 		entry.billboard.StudsOffsetWorldSpace = Vector3.new(0, golden and 4 or 2.8, 0)
 	end
-	local enabled = category.enabled and prompt.Enabled
-	if enabled and entry.category == "doors" then enabled = doorAvailable(prompt, now) end
-	if entry.highlight.Enabled ~= enabled then entry.highlight.Enabled = enabled end
+	local enabled = category.enabled
+	if entry.category == "doors" then
+		enabled = enabled and doorAvailable(prompt, now)
+	else
+		enabled = enabled and prompt.Enabled
+	end
+	updateGoldenBox(entry, enabled and golden)
+	local showHighlight = enabled and not golden
+	if entry.highlight.Enabled ~= showHighlight then entry.highlight.Enabled = showHighlight end
 	if entry.billboard.Enabled ~= enabled then entry.billboard.Enabled = enabled end
 	local distance = enabled and root and math.floor((root.Position - entry.anchor.Position).Magnitude) or nil
 	if styleChanged or (enabled and distance ~= entry.lastDistance) then
