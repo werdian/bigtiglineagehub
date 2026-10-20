@@ -23,6 +23,18 @@ local categories = {
 }
 local gui, updatePanel, updateStockPanel
 local refreshPrompt, updateVisuals
+local clickSignal = type(firesignal) == "function" and firesignal or nil
+local autoSettings = {
+	name = "Auto drug minigame", description = "Clicks the active glowing box",
+	color = Color3.fromRGB(100, 200, 255), enabled = false,
+	status = clickSignal and "OFF — open a buyer minigame to use." or "Unavailable: this runner does not support firesignal.",
+}
+local function setAutoEnabled(enabled, status)
+	autoSettings.enabled = enabled == true and clickSignal ~= nil
+	autoSettings.status = status or (not clickSignal and "Unavailable: this runner does not support firesignal."
+		or (autoSettings.enabled and "ON — waiting for a buyer minigame." or "OFF"))
+	if updatePanel then updatePanel(hubVisible) end
+end
 
 local function connect(signal, callback)
 	local connection = signal:Connect(callback)
@@ -90,7 +102,7 @@ local function setCategory(key, enabled)
 	updateVisuals()
 end
 
--- Native, self-contained visual controls. No executor, HTTP, or external UI library.
+-- Native visual controls; automation capability is checked separately.
 local function buildPanel(playerGui, categories, connections, setCategory, setHubVisible)
 	local TweenService = game:GetService("TweenService")
 	local UserInputService = game:GetService("UserInputService")
@@ -108,16 +120,48 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local function label(parent, value, size, color, font)
 		return new("TextLabel", {BackgroundTransparency = 1, Text = value, TextColor3 = color, Font = font or Enum.Font.GothamMedium, TextSize = size, TextXAlignment = Enum.TextXAlignment.Left}, parent)
 	end
-	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(360, 420), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
+	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(490, 350), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
 	corner(panel, 14); new("UIStroke", {Color = Color3.fromRGB(55, 72, 103), Thickness = 1, Transparency = .2}, panel)
-	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(300, 250), MaxSize = Vector2.new(420, 460)}, panel)
+	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(490, 350), MaxSize = Vector2.new(520, 400)}, panel)
 	local header = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 52), Position = UDim2.fromOffset(12, 8), Active = true}, panel)
 	local title = label(header, "BigTig Lineage Hub", 17, Color3.fromRGB(245, 248, 255), Enum.Font.GothamBold); title.Size = UDim2.new(1, -42, 0, 24)
-	local subtitle = label(header, "WORLD VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
+	local subtitle = label(header, "VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
 	local hide = new("TextButton", {BackgroundTransparency = 1, Text = "×", TextColor3 = Color3.fromRGB(150, 166, 198), Font = Enum.Font.GothamBold, TextSize = 22, Size = UDim2.fromOffset(32, 32), Position = UDim2.new(1, -30, 0, 0), AutoButtonColor = false}, header)
 	keep(hide.Activated:Connect(function() setHubVisible(false) end))
-	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 180), Position = UDim2.fromOffset(12, 63)}, panel); new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
-	local switches, order = {}, {"buyers", "merchant", "doors"}
+
+	local sidebar = new("Frame", {Name = "Tabs", BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 64), Size = UDim2.new(0, 102, 1, -108)}, panel)
+	new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, sidebar)
+	local pages, tabs = {}, {}
+	local function selectTab(selected)
+		for name, page in pairs(pages) do
+			local active = name == selected
+			page.Visible = active
+			tabs[name].BackgroundColor3 = active and Color3.fromRGB(47, 67, 105) or Color3.fromRGB(23, 31, 50)
+			tabs[name].TextColor3 = active and Color3.fromRGB(245, 248, 255) or Color3.fromRGB(127, 145, 178)
+		end
+		subtitle.Text = selected
+	end
+	for index, name in ipairs({"VISUALS", "AUTO", "STOCK"}) do
+		pages[name] = new("Frame", {Name = name, BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(126, 64), Size = UDim2.new(1, -138, 1, -108),
+			Visible = false}, panel)
+		local button = new("TextButton", {Name = name, LayoutOrder = index,
+			Size = UDim2.new(1, 0, 0, 38), Text = name, Font = Enum.Font.GothamBold,
+			TextSize = 12, AutoButtonColor = false}, sidebar)
+		corner(button, 9)
+		tabs[name] = button
+		keep(button.Activated:Connect(function() selectTab(name) end))
+	end
+	selectTab("VISUALS")
+	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 180)}, pages.VISUALS)
+	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
+	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
+	autoStatus.Position = UDim2.fromOffset(0, 68)
+	autoStatus.Size = UDim2.new(1, 0, 0, 65)
+	autoStatus.TextWrapped = true
+
+	local switches, order = {}, {"buyers", "merchant", "doors", "auto"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -130,21 +174,27 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category, accent = categories[key], categories[key].color or Color3.fromRGB(97, 165, 250)
-		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, cards); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
+		local category = key == "auto" and autoSettings or categories[key]
+		local accent = category.color
+		local rowParent = key == "auto" and pages.AUTO or cards
+		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
 		local thumb = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = UDim2.new(0, 3, .5, -9), BackgroundColor3 = Color3.fromRGB(248, 250, 255)}, track); corner(thumb, 9)
 		local state = label(row, "OFF", 9, Color3.fromRGB(120, 134, 160), Enum.Font.GothamBold); state.TextXAlignment = Enum.TextXAlignment.Center; state.Position = UDim2.new(1, -62, 0, 38); state.Size = UDim2.fromOffset(48, 12)
 		switches[key] = {track = track, thumb = thumb, state = state, accent = accent, tweens = {}}
-		keep(row.Activated:Connect(function() setCategory(key, not (categories[key].enabled == true)) end)); setSwitch(key, category.enabled == true, true)
+		keep(row.Activated:Connect(function()
+			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
+			else setCategory(key, not categories[key].enabled) end
+		end))
+		setSwitch(key, category.enabled == true, true)
 	end
 
 	local stockCard = new("Frame", {
-		Name = "DrugStock", Position = UDim2.fromOffset(12, 250),
-		Size = UDim2.new(1, -24, 0, 125), BackgroundColor3 = Color3.fromRGB(23, 31, 50),
-	}, panel)
+		Name = "DrugStock", Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 0, 125), BackgroundColor3 = Color3.fromRGB(23, 31, 50),
+	}, pages.STOCK)
 	corner(stockCard, 9)
 	local stockTitle = label(stockCard, "DRUG STOCK", 12, Color3.fromRGB(230, 235, 246), Enum.Font.GothamBold)
 	stockTitle.Position = UDim2.fromOffset(13, 10)
@@ -247,7 +297,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	keep(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragStart = nil end end))
 	local function fitViewport()
 		local viewport = availableSize()
-		scale.Scale = math.clamp(math.min(viewport.X / 400, viewport.Y / 460), .55, 1)
+		scale.Scale = math.clamp(math.min(viewport.X / 530, viewport.Y / 390), .4, 1)
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panel.Position.X.Offset, 8, maxX), math.clamp(panel.Position.Y.Offset, 8, maxY))
@@ -258,6 +308,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local function updatePanel(enabled)
 		panel.Visible = enabled == true and not loading
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
+		setSwitch("auto", autoSettings.enabled, false)
+		autoStatus.Text = autoSettings.status
 	end
 	return gui, updatePanel, updateStockPanel
 end
@@ -510,5 +562,53 @@ task.spawn(function()
 		local before = revision
 		local success, snapshot = pcall(function() return getStock:InvokeServer() end)
 		if success and alive and revision == before then accept(snapshot) end
+	end
+end)
+
+local function activeSaleButton(sale)
+	if not sale or not sale.Enabled then return nil end
+	local card = sale:FindFirstChild("Card")
+	if not card or not card.Visible then return nil end
+	local area = card:FindFirstChild("GameArea")
+	if not area or not area.Visible then return nil end
+	local result = area:FindFirstChild("Result")
+	if result and result.Visible then return nil end
+	for _, button in ipairs(area:GetChildren()) do
+		if button:IsA("TextButton") and button.Visible then
+			local icon = button:FindFirstChildOfClass("TextLabel")
+			if icon and icon.Text == "💊" then
+				for _, child in ipairs(button:GetChildren()) do
+					if child:IsA("Frame") and child.ZIndex == 12 and child.Visible then
+						return button
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+task.spawn(function()
+	local lastClicked
+	while alive do
+		if not autoSettings.enabled then
+			task.wait(0.25)
+		else
+			local sale = playerGui:FindFirstChild("SaleUI")
+			local button = activeSaleButton(sale)
+			if button and button ~= lastClicked and not UserInputService:GetFocusedTextBox() then
+				-- The game arms the active box 0.1 seconds after revealing it.
+				task.wait(0.18)
+				if alive and autoSettings.enabled and activeSaleButton(sale) == button
+					and not UserInputService:GetFocusedTextBox() then
+					lastClicked = button
+					local success = pcall(clickSignal, button.MouseButton1Click)
+					if not success then
+						setAutoEnabled(false, "Click simulation failed. AUTO was turned OFF.")
+					end
+				end
+			end
+			task.wait(0.05)
+		end
 	end
 end)
