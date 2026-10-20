@@ -14,7 +14,7 @@ if oldGui then oldGui:Destroy() end
 local controller = Instance.new("Folder")
 controller.Name = CONTROLLER_NAME
 controller.Parent = Workspace
-local alive, masterEnabled = true, true
+local alive, hubVisible = true, true
 local connections, watched, entries = {}, {}, {}
 local categories = {
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
@@ -78,20 +78,19 @@ local function createEntry(prompt, categoryKey, target, anchor)
 	return entry
 end
 
-local function setMaster(enabled)
-	masterEnabled = enabled
-	updatePanel(masterEnabled)
-	updateVisuals()
+local function setHubVisible(enabled)
+	hubVisible = enabled
+	updatePanel(hubVisible)
 end
 
 local function setCategory(key, enabled)
 	categories[key].enabled = enabled
-	updatePanel(masterEnabled)
+	updatePanel(hubVisible)
 	updateVisuals()
 end
 
 -- Native, self-contained visual controls. No executor, HTTP, or external UI library.
-local function buildPanel(playerGui, categories, connections, setCategory, setMaster)
+local function buildPanel(playerGui, categories, connections, setCategory, setHubVisible)
 	local TweenService = game:GetService("TweenService")
 	local UserInputService = game:GetService("UserInputService")
 	local gui = Instance.new("ScreenGui")
@@ -115,7 +114,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setMa
 	local title = label(header, "BigTig Lineage Hub", 17, Color3.fromRGB(245, 248, 255), Enum.Font.GothamBold); title.Size = UDim2.new(1, -42, 0, 24)
 	local subtitle = label(header, "WORLD VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
 	local hide = new("TextButton", {BackgroundTransparency = 1, Text = "×", TextColor3 = Color3.fromRGB(150, 166, 198), Font = Enum.Font.GothamBold, TextSize = 22, Size = UDim2.fromOffset(32, 32), Position = UDim2.new(1, -30, 0, 0), AutoButtonColor = false}, header)
-	keep(hide.Activated:Connect(function() setMaster(false) end))
+	keep(hide.Activated:Connect(function() setHubVisible(false) end))
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 180), Position = UDim2.fromOffset(12, 63)}, panel); new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local switches, order = {}, {"buyers", "merchant", "doors"}
 	local function setSwitch(key, enabled, instant)
@@ -141,8 +140,35 @@ local function buildPanel(playerGui, categories, connections, setCategory, setMa
 		keep(row.Activated:Connect(function() setCategory(key, not (categories[key].enabled == true)) end)); setSwitch(key, category.enabled == true, true)
 	end
 	local footer = label(panel, "Right Shift to Toggle", 10, Color3.fromRGB(127, 145, 178)); footer.Position = UDim2.new(0, 14, 1, -28); footer.Size = UDim2.new(1, -28, 0, 16)
-	local pill = new("TextButton", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(48, 30), BackgroundColor3 = Color3.fromRGB(22, 31, 51), Text = "HUB", TextColor3 = Color3.fromRGB(225, 232, 247), Font = Enum.Font.GothamBold, TextSize = 11, AutoButtonColor = false, Visible = false}, gui); corner(pill, 15); new("UIStroke", {Color = Color3.fromRGB(75, 99, 143), Thickness = 1}, pill)
-	local masterEnabled = true; keep(pill.Activated:Connect(function() setMaster(not masterEnabled) end))
+	local loading = true
+	panel.Visible = false
+	local splash = new("Frame", {
+		Name = "LoadingSplash", AnchorPoint = Vector2.new(.5, .5),
+		Position = UDim2.fromScale(.5, .5), Size = UDim2.new(.8, 0, 0, 100),
+		BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .08,
+	}, gui)
+	corner(splash, 14)
+	new("UISizeConstraint", {MaxSize = Vector2.new(480, 100)}, splash)
+	local loadingText = label(splash, "NIC IS GAY", 36, Color3.new(1, 1, 1), Enum.Font.GothamBold)
+	loadingText.Size = UDim2.fromScale(1, 1)
+	loadingText.TextXAlignment = Enum.TextXAlignment.Center
+	loadingText.TextScaled = true
+	new("UITextSizeConstraint", {MinTextSize = 12, MaxTextSize = 36}, loadingText)
+	local colors = {}
+	for index = 0, 6 do
+		table.insert(colors, ColorSequenceKeypoint.new(index / 6, Color3.fromHSV(index / 6, 1, 1)))
+	end
+	local rainbow = new("UIGradient", {Color = ColorSequence.new(colors)}, loadingText)
+	local rainbowTween = TweenService:Create(rainbow, TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), {Rotation = 360})
+	rainbowTween:Play()
+	keep(gui.Destroying:Connect(function() rainbowTween:Cancel() end))
+	task.delay(10, function()
+		rainbowTween:Cancel()
+		if not alive or not gui.Parent then return end
+		splash:Destroy()
+		loading = false
+		panel.Visible = hubVisible
+	end)
 	local dragStart, panelStart
 	local function availableSize()
 		local size = gui.AbsoluteSize
@@ -157,7 +183,6 @@ local function buildPanel(playerGui, categories, connections, setCategory, setMa
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panelStart.X.Offset + delta.X, 8, maxX), math.clamp(panelStart.Y.Offset + delta.Y, 8, maxY))
-		pill.Position = panel.Position
 	end))
 	keep(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragStart = nil end end))
 	local function fitViewport()
@@ -166,13 +191,12 @@ local function buildPanel(playerGui, categories, connections, setCategory, setMa
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panel.Position.X.Offset, 8, maxX), math.clamp(panel.Position.Y.Offset, 8, maxY))
-		pill.Position = panel.Position
 	end
 	fitViewport()
 	keep(gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitViewport))
 	keep(gui.Destroying:Connect(function() for _, item in pairs(switches) do for _, tween in ipairs(item.tweens) do tween:Cancel() end end end))
 	local function updatePanel(enabled)
-		masterEnabled = enabled == true; panel.Visible, pill.Visible = masterEnabled, not masterEnabled
+		panel.Visible = enabled == true and not loading
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
 	end
 	return gui, updatePanel
@@ -231,7 +255,7 @@ end
 
 local function renderEntry(prompt, entry, root, now)
 	local category = categories[entry.category]
-	local enabled = masterEnabled and category.enabled and prompt.Enabled
+	local enabled = category.enabled and prompt.Enabled
 	if enabled and entry.category == "doors" then enabled = doorAvailable(prompt, now) end
 	if entry.highlight.Enabled ~= enabled then entry.highlight.Enabled = enabled end
 	if entry.billboard.Enabled ~= enabled then entry.billboard.Enabled = enabled end
@@ -308,11 +332,11 @@ local function watch(prompt)
 	refreshPrompt(prompt)
 end
 
-gui, updatePanel = buildPanel(playerGui, categories, connections, setCategory, setMaster)
-updatePanel(masterEnabled)
+gui, updatePanel = buildPanel(playerGui, categories, connections, setCategory, setHubVisible)
+updatePanel(hubVisible)
 connect(UserInputService.InputBegan, function(input, processed)
 	if input.KeyCode == Enum.KeyCode.RightShift and not processed and not UserInputService:GetFocusedTextBox() then
-		setMaster(not masterEnabled)
+		setHubVisible(not hubVisible)
 	end
 end)
 
@@ -364,6 +388,6 @@ updateVisuals()
 task.spawn(function()
 	while alive do
 		task.wait(0.3)
-		if alive and masterEnabled then updateVisuals() end
+		if alive then updateVisuals() end
 	end
 end)
