@@ -21,7 +21,7 @@ local categories = {
 	merchant = {name = "Traveling merchant", label = "พ่อค้าพเนจร", description = "appears every 20 minutes", color = Color3.fromRGB(180, 70, 255), enabled = true},
 	doors = {name = "Trick-or-treat doors", label = "Trick or Treat", description = "hold candy bucket to show", color = Color3.fromRGB(255, 155, 45), enabled = true},
 }
-local gui, updatePanel
+local gui, updatePanel, updateStockPanel
 local refreshPrompt, updateVisuals
 
 local function connect(signal, callback)
@@ -107,9 +107,9 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local function label(parent, value, size, color, font)
 		return new("TextLabel", {BackgroundTransparency = 1, Text = value, TextColor3 = color, Font = font or Enum.Font.GothamMedium, TextSize = size, TextXAlignment = Enum.TextXAlignment.Left}, parent)
 	end
-	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(360, 300), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
+	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(360, 420), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
 	corner(panel, 14); new("UIStroke", {Color = Color3.fromRGB(55, 72, 103), Thickness = 1, Transparency = .2}, panel)
-	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(300, 250), MaxSize = Vector2.new(420, 340)}, panel)
+	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(300, 250), MaxSize = Vector2.new(420, 460)}, panel)
 	local header = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 52), Position = UDim2.fromOffset(12, 8), Active = true}, panel)
 	local title = label(header, "BigTig Lineage Hub", 17, Color3.fromRGB(245, 248, 255), Enum.Font.GothamBold); title.Size = UDim2.new(1, -42, 0, 24)
 	local subtitle = label(header, "WORLD VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
@@ -139,6 +139,52 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		switches[key] = {track = track, thumb = thumb, state = state, accent = accent, tweens = {}}
 		keep(row.Activated:Connect(function() setCategory(key, not (categories[key].enabled == true)) end)); setSwitch(key, category.enabled == true, true)
 	end
+
+	local stockCard = new("Frame", {
+		Name = "DrugStock", Position = UDim2.fromOffset(12, 250),
+		Size = UDim2.new(1, -24, 0, 125), BackgroundColor3 = Color3.fromRGB(23, 31, 50),
+	}, panel)
+	corner(stockCard, 9)
+	local stockTitle = label(stockCard, "DRUG STOCK", 12, Color3.fromRGB(230, 235, 246), Enum.Font.GothamBold)
+	stockTitle.Position = UDim2.fromOffset(13, 10)
+	stockTitle.Size = UDim2.new(1, -26, 0, 20)
+	local stockLabels = {}
+	for index, name in ipairs({"YABA", "COCA", "TRAM"}) do
+		local value = label(stockCard, name .. ": --", 13, Color3.fromRGB(180, 195, 218))
+		value.Position = UDim2.fromOffset(13, 33 + (index - 1) * 25)
+		value.Size = UDim2.new(1, -26, 0, 22)
+		stockLabels[name] = value
+	end
+	local toast = new("Frame", {
+		Name = "RestockNotification", AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -18, 0, 18), Size = UDim2.new(.85, 0, 0, 94),
+		BackgroundColor3 = Color3.fromRGB(23, 31, 50), Visible = false,
+	}, gui)
+	corner(toast, 12)
+	new("UISizeConstraint", {MaxSize = Vector2.new(360, 94)}, toast)
+	local toastTitle = label(toast, "DRUGS RESTOCKED", 13, Color3.fromRGB(100, 235, 160), Enum.Font.GothamBold)
+	toastTitle.Position = UDim2.fromOffset(14, 10)
+	toastTitle.Size = UDim2.new(1, -28, 0, 20)
+	local toastText = label(toast, "", 12, Color3.fromRGB(230, 235, 246))
+	toastText.Position = UDim2.fromOffset(14, 34)
+	toastText.Size = UDim2.new(1, -28, 0, 48)
+	toastText.TextWrapped = true
+	local toastVersion = 0
+	local function updateStockPanel(counts, increases)
+		for name, value in pairs(stockLabels) do
+			local count = counts[name]
+			value.Text = name .. ": " .. (count ~= nil and tostring(count) or "--")
+		end
+		if #increases == 0 then return end
+		toastVersion += 1
+		local version = toastVersion
+		toastText.Text = table.concat(increases, "  •  ")
+		toast.Visible = true
+		task.delay(7, function()
+			if alive and gui.Parent and version == toastVersion then toast.Visible = false end
+		end)
+	end
+
 	local footer = label(panel, "Right Shift to Toggle", 10, Color3.fromRGB(127, 145, 178)); footer.Position = UDim2.new(0, 14, 1, -28); footer.Size = UDim2.new(1, -28, 0, 16)
 	local loading = true
 	panel.Visible = false
@@ -187,7 +233,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	keep(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragStart = nil end end))
 	local function fitViewport()
 		local viewport = availableSize()
-		scale.Scale = math.clamp(math.min(viewport.X / 400, viewport.Y / 340), .55, 1)
+		scale.Scale = math.clamp(math.min(viewport.X / 400, viewport.Y / 460), .55, 1)
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panel.Position.X.Offset, 8, maxX), math.clamp(panel.Position.Y.Offset, 8, maxY))
@@ -199,7 +245,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		panel.Visible = enabled == true and not loading
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
 	end
-	return gui, updatePanel
+	return gui, updatePanel, updateStockPanel
 end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -332,7 +378,7 @@ local function watch(prompt)
 	refreshPrompt(prompt)
 end
 
-gui, updatePanel = buildPanel(playerGui, categories, connections, setCategory, setHubVisible)
+gui, updatePanel, updateStockPanel = buildPanel(playerGui, categories, connections, setCategory, setHubVisible)
 updatePanel(hubVisible)
 connect(UserInputService.InputBegan, function(input, processed)
 	if input.KeyCode == Enum.KeyCode.RightShift and not processed and not UserInputService:GetFocusedTextBox() then
@@ -389,5 +435,54 @@ task.spawn(function()
 	while alive do
 		task.wait(0.3)
 		if alive then updateVisuals() end
+	end
+end)
+local stockItems = {
+	{name = "YABA", id = "ยาบ้า"},
+	{name = "COCA", id = "ผงไอซ์"},
+	{name = "TRAM", id = "เขียวเหลือง"},
+}
+
+local function readStockSnapshot(snapshot, previous)
+	if type(snapshot) ~= "table" then return nil end
+	local counts, increases = {}, {}
+	for _, item in ipairs(stockItems) do
+		local count = snapshot[item.id]
+		if count == nil then count = 0 end
+		if type(count) ~= "number" or count ~= count or count < 0 or count == math.huge then
+			return nil
+		end
+		count = math.floor(count)
+		counts[item.name] = count
+		if previous and count > previous[item.name] then
+			table.insert(increases, item.name .. ": " .. count)
+		end
+	end
+	return counts, increases
+end
+
+-- Subscribe before the initial read so an older response cannot replace an event.
+task.spawn(function()
+	local job = ReplicatedStorage:WaitForChild("Job", 10)
+	if not job or not alive then return end
+	local stockUpdated = job:WaitForChild("StockUpdated", 10)
+	local getStock = job:WaitForChild("GetStock", 10)
+	if not alive then return end
+	local previous, revision = nil, 0
+	local function accept(snapshot)
+		if not alive then return end
+		local counts, increases = readStockSnapshot(snapshot, previous)
+		if not counts then return end
+		previous = counts
+		revision += 1
+		updateStockPanel(counts, increases)
+	end
+	if stockUpdated and stockUpdated:IsA("RemoteEvent") then
+		connect(stockUpdated.OnClientEvent, accept)
+	end
+	if getStock and getStock:IsA("RemoteFunction") then
+		local before = revision
+		local success, snapshot = pcall(function() return getStock:InvokeServer() end)
+		if success and alive and revision == before then accept(snapshot) end
 	end
 end)
