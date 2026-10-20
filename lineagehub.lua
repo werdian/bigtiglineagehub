@@ -1,4 +1,3 @@
--- Self-contained client visual hub; no external UI library or downloads.
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -348,7 +347,6 @@ connect(controller.Destroying, function()
 	gui:Destroy()
 end)
 
--- One startup scan. After this, only prompt changes and tracked visuals are processed.
 local initial = Workspace:GetDescendants()
 for index, instance in ipairs(initial) do
 	if not alive then break end
@@ -369,5 +367,3 @@ task.spawn(function()
 		if alive and masterEnabled then updateVisuals() end
 	end
 end)
-
--- Restore saved toggle values only after every callback dependency is initialized.
