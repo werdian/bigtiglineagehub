@@ -205,7 +205,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	loadingStatus.Size = UDim2.new(1, 0, 0, 25)
 	loadingStatus.TextXAlignment = Enum.TextXAlignment.Center
 	task.spawn(function()
-		local messages = {"SCRIPT IS LOADING.", "LOADING..", "LOADING..."}
+		local messages = {"SCRIPT IS LOADING.", "SCRIPT IS LOADING..", "SCRIPT IS LOADING..."}
 		local index = 1
 		while alive and loading and splash.Parent do
 			loadingStatus.Text = messages[index]
