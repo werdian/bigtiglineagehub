@@ -23,15 +23,15 @@ local categories = {
 }
 local gui, updatePanel, updateStockPanel
 local refreshPrompt, updateVisuals
-local clickSignal = type(firesignal) == "function" and firesignal or nil
+local inspectConnections = type(getconnections) == "function" and getconnections or nil
 local autoSettings = {
 	name = "Auto drug minigame", description = "Clicks the active glowing box",
 	color = Color3.fromRGB(100, 200, 255), enabled = false,
-	status = clickSignal and "OFF — open a buyer minigame to use." or "Unavailable: this runner does not support firesignal.",
+	status = inspectConnections and "OFF — open a buyer minigame to use." or "Unavailable: this runner does not support getconnections.",
 }
 local function setAutoEnabled(enabled, status)
-	autoSettings.enabled = enabled == true and clickSignal ~= nil
-	autoSettings.status = status or (not clickSignal and "Unavailable: this runner does not support firesignal."
+	autoSettings.enabled = enabled == true and inspectConnections ~= nil
+	autoSettings.status = status or (not inspectConnections and "Unavailable: this runner does not support getconnections."
 		or (autoSettings.enabled and "ON — waiting for a buyer minigame." or "OFF"))
 	if updatePanel then updatePanel(hubVisible) end
 end
@@ -588,6 +588,28 @@ local function activeSaleButton(sale)
 	return nil
 end
 
+local function scheduleSaleClick(button, onError)
+	local success, handler = pcall(function()
+		local callback
+		for _, connection in ipairs(inspectConnections(button.MouseButton1Click)) do
+			if connection.Enabled ~= false and connection.ForeignState ~= true
+				and type(connection.Function) == "function" then
+				if callback then error("More than one sale click handler found") end
+				callback = connection.Function
+			end
+		end
+		assert(callback, "No callable sale click handler found")
+		return callback
+	end)
+	if not success then return false, tostring(handler) end
+	-- The game's handler yields before advancing. Let Roblox schedule those waits.
+	task.spawn(function()
+		local ok, message = pcall(handler)
+		if not ok then onError(tostring(message)) end
+	end)
+	return true
+end
+
 task.spawn(function()
 	local lastClicked
 	while alive do
@@ -602,10 +624,13 @@ task.spawn(function()
 				if alive and autoSettings.enabled and activeSaleButton(sale) == button
 					and not UserInputService:GetFocusedTextBox() then
 					lastClicked = button
-					local success = pcall(clickSignal, button.MouseButton1Click)
-					if not success then
-						setAutoEnabled(false, "Click simulation failed. AUTO was turned OFF.")
+					local function reportError(message)
+						if not alive then return end
+						setAutoEnabled(false, "AUTO stopped: " .. message:sub(1, 160))
+						warn("Lineage Hub auto minigame: " .. message)
 					end
+					local success, message = scheduleSaleClick(button, reportError)
+					if not success then reportError(message) end
 				end
 			end
 			task.wait(0.05)
