@@ -63,6 +63,7 @@ local function createEntry(prompt, categoryKey, target, anchor)
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.GothamMedium
 	label.TextScaled = false
+	label.RichText = true
 	label.TextSize = 12
 	label.TextColor3 = category.color
 	label.TextStrokeColor3 = Color3.new(0, 0, 0)
@@ -314,15 +315,27 @@ end
 
 local function renderEntry(prompt, entry, root, now)
 	local category = categories[entry.category]
+	local golden = entry.category == "doors" and prompt:GetAttribute("Golden") == true
+	local styleChanged = entry.golden ~= golden
+	if styleChanged then
+		entry.golden = golden
+		local color = golden and Color3.fromRGB(255, 235, 40) or category.color
+		entry.highlight.FillColor = color
+		entry.highlight.OutlineColor = golden and Color3.fromRGB(255, 255, 190) or color
+		entry.highlight.FillTransparency = golden and 0.3 or 0.65
+		entry.label.TextColor3 = color
+		entry.billboard.Size = golden and UDim2.fromOffset(240, 72) or UDim2.fromOffset(160, 32)
+		entry.billboard.StudsOffsetWorldSpace = Vector3.new(0, golden and 4 or 2.8, 0)
+	end
 	local enabled = category.enabled and prompt.Enabled
 	if enabled and entry.category == "doors" then enabled = doorAvailable(prompt, now) end
 	if entry.highlight.Enabled ~= enabled then entry.highlight.Enabled = enabled end
 	if entry.billboard.Enabled ~= enabled then entry.billboard.Enabled = enabled end
-	if not enabled then return end
-	local distance = root and math.floor((root.Position - entry.anchor.Position).Magnitude)
-	if distance ~= entry.lastDistance then
+	local distance = enabled and root and math.floor((root.Position - entry.anchor.Position).Magnitude) or nil
+	if styleChanged or (enabled and distance ~= entry.lastDistance) then
 		entry.lastDistance = distance
-		entry.label.Text = category.label .. (distance and string.format("\n%d studs", distance) or "\n-- studs")
+		local heading = golden and '<font size="26"><b>5X GOLDEN</b></font>\n' or ""
+		entry.label.Text = heading .. category.label .. (distance and string.format("\n%d studs", distance) or "\n-- studs")
 	end
 end
 
