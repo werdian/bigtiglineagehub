@@ -17,7 +17,7 @@ controller.Parent = Workspace
 local alive, hubVisible = true, true
 local connections, watched, entries = {}, {}, {}
 local categories = {
- players = {name = "Player ESP", description = "Display name and distance", color = Color3.fromRGB(255, 55, 65), enabled = false},
+ players = {name = "Player ESP", description = "Team color, distance and held item", color = Color3.fromRGB(255, 55, 65), enabled = false},
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
 	merchant = {name = "Traveling merchant", label = "พ่อค้าพเนจร", description = "appears every 20 minutes", color = Color3.fromRGB(180, 70, 255), enabled = true},
 	doors = {name = "Trick-or-treat doors", label = "Trick or Treat", description = "hold candy bucket to show", color = Color3.fromRGB(255, 155, 45), enabled = true},
@@ -222,29 +222,6 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		setSwitch(key, category.enabled == true, true)
 	end
 
- local palette = {
-  {name = "RED", color = Color3.fromRGB(255, 55, 65)},
-  {name = "GREEN", color = Color3.fromRGB(65, 235, 110)},
-  {name = "PURPLE", color = Color3.fromRGB(180, 70, 255)},
- }
- local colorButtons = {}
- local function chooseESPColor(index)
-  categories.players.color = palette[index].color
-  for i, button in ipairs(colorButtons) do
-   button.Text = (i == index and "● " or "") .. palette[i].name
-  end
-  if updatePlayerESP then updatePlayerESP() end
- end
- for index, option in ipairs(palette) do
-  local button = new("TextButton", {Name = option.name, Text = option.name,
-   Position = UDim2.new((index - 1) / 3, 0, 0, 258), Size = UDim2.new(1 / 3, -6, 0, 32),
-   BackgroundColor3 = Color3.fromRGB(23, 31, 50), TextColor3 = option.color,
-   TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false}, pages.VISUALS)
-  corner(button, 8)
-  colorButtons[index] = button
-  keep(button.Activated:Connect(function() chooseESPColor(index) end))
- end
- chooseESPColor(1)
  local slider = new("Frame", {Name = "FOVSlider", BackgroundTransparency = 1,
   Position = UDim2.fromOffset(0, 128), Size = UDim2.new(1, 0, 0, 60)}, pages.AUTO)
  local radiusLabel = label(slider, "", 12, Color3.fromRGB(230, 235, 246))
@@ -927,7 +904,7 @@ updatePlayerESP = function()
    highlight.Parent = controller
    local billboard = Instance.new("BillboardGui")
    billboard.Name = "LocalPlayerESPLabel"
-   billboard.Size = UDim2.fromOffset(260, 24)
+   billboard.Size = UDim2.fromOffset(260, 42)
    billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
    billboard.AlwaysOnTop = true
    billboard.Parent = controller
@@ -944,13 +921,17 @@ updatePlayerESP = function()
    record.highlight.Enabled = visible
    record.billboard.Enabled = visible
    if visible then
-    record.highlight.FillColor = settings.color
-    record.highlight.OutlineColor = settings.color
-    record.label.TextColor3 = settings.color
+    local team = other.Team
+    local color = team and not other.Neutral and team.TeamColor.Color or Color3.fromRGB(235, 235, 235)
+    record.highlight.FillColor = color
+    record.highlight.OutlineColor = color
+    record.label.TextColor3 = color
     record.billboard.Adornee = anchor
     -- Default Roblox scale: one stud is 0.28 metres.
     local metres = math.floor((root.Position - anchor.Position).Magnitude * 0.28 + 0.5)
-    record.label.Text = string.format("%s [%dm]", other.DisplayName, metres)
+    local tool = character:FindFirstChildOfClass("Tool")
+    local heldName = tool and tool.Name or "Unarmed"
+    record.label.Text = string.format("%s [%dm]\n%s", other.DisplayName, metres, heldName)
    end
   end
  end
