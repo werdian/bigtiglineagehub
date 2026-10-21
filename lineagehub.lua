@@ -17,27 +17,35 @@ controller.Parent = Workspace
 local alive, hubVisible = true, true
 local connections, watched, entries = {}, {}, {}
 local categories = {
+ players = {name = "Player ESP", description = "Display name and distance", color = Color3.fromRGB(255, 55, 65), enabled = false},
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
 	merchant = {name = "Traveling merchant", label = "พ่อค้าพเนจร", description = "appears every 20 minutes", color = Color3.fromRGB(180, 70, 255), enabled = true},
 	doors = {name = "Trick-or-treat doors", label = "Trick or Treat", description = "hold candy bucket to show", color = Color3.fromRGB(255, 155, 45), enabled = true},
 }
 local gui, updatePanel, updateStockPanel
+local updatePlayerESP
+local aimCircle
 local refreshPrompt, updateVisuals
 local aimGui
 local aimSettings = {
- name = "Silent aim", description = "90 px radius • closest player",
- color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false,
+ name = "Silent aim", description = "Closest player inside the FOV",
+ color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false, radius = 90,
  status = "Silent aim: checking weapon support…",
 }
 local function setAimEnabled(enabled)
  aimSettings.enabled = enabled == true and aimSettings.ready
  if aimGui then aimGui.Enabled = aimSettings.enabled end
  if aimSettings.ready then
-  aimSettings.status = aimSettings.enabled and "Silent aim: ON — 90 px radius" or "Silent aim: OFF"
+  aimSettings.status = aimSettings.enabled and ("Silent aim: ON — " .. aimSettings.radius .. " px radius") or "Silent aim: OFF"
  end
  if updatePanel then updatePanel(hubVisible) end
 end
 
+local function setAimRadius(value)
+ aimSettings.radius = math.clamp(math.floor(value + 0.5), 20, 300)
+ if aimCircle then aimCircle.Size = UDim2.fromOffset(aimSettings.radius * 2, aimSettings.radius * 2) end
+ setAimEnabled(aimSettings.enabled)
+end
 local inspectConnections = type(getconnections) == "function" and getconnections or nil
 local autoSettings = {
 	name = "Auto drug minigame", description = "Clicks the active glowing box",
@@ -114,6 +122,7 @@ end
 
 local function setCategory(key, enabled)
 	categories[key].enabled = enabled
+	if updatePlayerESP then updatePlayerESP() end
 	updatePanel(hubVisible)
 	updateVisuals()
 end
@@ -136,9 +145,9 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local function label(parent, value, size, color, font)
 		return new("TextLabel", {BackgroundTransparency = 1, Text = value, TextColor3 = color, Font = font or Enum.Font.GothamMedium, TextSize = size, TextXAlignment = Enum.TextXAlignment.Left}, parent)
 	end
-	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(490, 350), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
+	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(490, 440), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
 	corner(panel, 14); new("UIStroke", {Color = Color3.fromRGB(55, 72, 103), Thickness = 1, Transparency = .2}, panel)
-	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(490, 350), MaxSize = Vector2.new(520, 400)}, panel)
+	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(490, 440), MaxSize = Vector2.new(520, 480)}, panel)
 	local header = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 52), Position = UDim2.fromOffset(12, 8), Active = true}, panel)
 	local title = label(header, "BigTig Lineage Hub", 17, Color3.fromRGB(245, 248, 255), Enum.Font.GothamBold); title.Size = UDim2.new(1, -42, 0, 24)
 	local subtitle = label(header, "VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
@@ -170,18 +179,18 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(button.Activated:Connect(function() selectTab(name) end))
 	end
 	selectTab("VISUALS")
-	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 180)}, pages.VISUALS)
+	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 248)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 128)
+	autoStatus.Position = UDim2.fromOffset(0, 195)
 	autoStatus.Size = UDim2.new(1, 0, 0, 44)
 	autoStatus.TextWrapped = true
  local aimStatus = label(pages.AUTO, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
- aimStatus.Position = UDim2.fromOffset(0, 178)
+ aimStatus.Position = UDim2.fromOffset(0, 245)
  aimStatus.Size = UDim2.new(1, 0, 0, 50)
  aimStatus.TextWrapped = true
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "auto", "aim"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "auto", "aim"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -212,6 +221,73 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end))
 		setSwitch(key, category.enabled == true, true)
 	end
+
+ local palette = {
+  {name = "RED", color = Color3.fromRGB(255, 55, 65)},
+  {name = "GREEN", color = Color3.fromRGB(65, 235, 110)},
+  {name = "PURPLE", color = Color3.fromRGB(180, 70, 255)},
+ }
+ local colorButtons = {}
+ local function chooseESPColor(index)
+  categories.players.color = palette[index].color
+  for i, button in ipairs(colorButtons) do
+   button.Text = (i == index and "● " or "") .. palette[i].name
+  end
+  if updatePlayerESP then updatePlayerESP() end
+ end
+ for index, option in ipairs(palette) do
+  local button = new("TextButton", {Name = option.name, Text = option.name,
+   Position = UDim2.new((index - 1) / 3, 0, 0, 258), Size = UDim2.new(1 / 3, -6, 0, 32),
+   BackgroundColor3 = Color3.fromRGB(23, 31, 50), TextColor3 = option.color,
+   TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false}, pages.VISUALS)
+  corner(button, 8)
+  colorButtons[index] = button
+  keep(button.Activated:Connect(function() chooseESPColor(index) end))
+ end
+ chooseESPColor(1)
+ local slider = new("Frame", {Name = "FOVSlider", BackgroundTransparency = 1,
+  Position = UDim2.fromOffset(0, 128), Size = UDim2.new(1, 0, 0, 60)}, pages.AUTO)
+ local radiusLabel = label(slider, "", 12, Color3.fromRGB(230, 235, 246))
+ radiusLabel.Size = UDim2.new(1, 0, 0, 20)
+ local sliderInput = new("TextButton", {Text = "", BackgroundTransparency = 1, AutoButtonColor = false,
+  Position = UDim2.fromOffset(8, 25), Size = UDim2.new(1, -16, 0, 24)}, slider)
+ local rail = new("Frame", {Position = UDim2.new(0, 0, .5, -3), Size = UDim2.new(1, 0, 0, 6),
+  BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, sliderInput)
+ corner(rail, 3)
+ local fill = new("Frame", {Size = UDim2.fromScale(0, 1), BackgroundColor3 = aimSettings.color}, rail)
+ corner(fill, 3)
+ local knob = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(14, 14),
+  BackgroundColor3 = Color3.fromRGB(245, 248, 255)}, rail)
+ corner(knob, 7)
+ local function refreshRadius()
+  local alpha = (aimSettings.radius - 20) / 280
+  fill.Size = UDim2.fromScale(alpha, 1)
+  knob.Position = UDim2.fromScale(alpha, .5)
+  radiusLabel.Text = "FOV RADIUS: " .. aimSettings.radius .. " px"
+ end
+ local draggingSlider
+ local function moveSlider(input)
+  if sliderInput.AbsoluteSize.X <= 0 then return end
+  local inset = game:GetService("GuiService"):GetGuiInset()
+  local alpha = math.clamp((input.Position.X - inset.X - sliderInput.AbsolutePosition.X) / sliderInput.AbsoluteSize.X, 0, 1)
+  setAimRadius(20 + alpha * 280)
+  refreshRadius()
+ end
+ keep(sliderInput.InputBegan:Connect(function(input)
+  if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+   draggingSlider = input
+   moveSlider(input)
+  end
+ end))
+ keep(UserInputService.InputChanged:Connect(function(input)
+  if not draggingSlider then return end
+  if input == draggingSlider or (draggingSlider.UserInputType == Enum.UserInputType.MouseButton1
+   and input.UserInputType == Enum.UserInputType.MouseMovement) then moveSlider(input) end
+ end))
+ keep(UserInputService.InputEnded:Connect(function(input)
+  if input == draggingSlider then draggingSlider = nil end
+ end))
+ refreshRadius()
 
 	local stockCard = new("Frame", {
 		Name = "DrugStock", Position = UDim2.fromOffset(0, 0),
@@ -319,7 +395,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	keep(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragStart = nil end end))
 	local function fitViewport()
 		local viewport = availableSize()
-		scale.Scale = math.clamp(math.min(viewport.X / 530, viewport.Y / 390), .4, 1)
+		scale.Scale = math.clamp(math.min(viewport.X / 530, viewport.Y / 480), .4, 1)
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panel.Position.X.Offset, 8, maxX), math.clamp(panel.Position.Y.Offset, 8, maxY))
@@ -706,10 +782,11 @@ aimGui.DisplayOrder = 29
 aimGui.Enabled = false
 aimGui.Parent = playerGui
 local circle = Instance.new("Frame")
-circle.Name = "FOV90"
+aimCircle = circle
+circle.Name = "AimFOVCircle"
 circle.AnchorPoint = Vector2.new(0.5, 0.5)
 circle.Position = UDim2.fromScale(0.5, 0.5)
-circle.Size = UDim2.fromOffset(180, 180)
+circle.Size = UDim2.fromOffset(aimSettings.radius * 2, aimSettings.radius * 2)
 circle.BackgroundTransparency = 1
 circle.BorderSizePixel = 0
 circle.Parent = aimGui
@@ -732,7 +809,7 @@ local function selectAimPart()
  local camera = Workspace.CurrentCamera
  if not camera then return nil end
  local center = camera.ViewportSize * 0.5
- local best, bestDistance = nil, 90 * 90
+ local best, bestDistance = nil, aimSettings.radius * aimSettings.radius
  for _, candidate in ipairs(Players:GetPlayers()) do
   if candidate ~= player then
    local character = candidate.Character
@@ -811,4 +888,80 @@ task.spawn(function()
  end
  aimSettings.ready = true
  setAimEnabled(false)
+end)
+
+local playerMarkers = {}
+local function clearPlayerMarker(record)
+ if record.highlight then record.highlight:Destroy() end
+ if record.billboard then record.billboard:Destroy() end
+ record.highlight, record.billboard, record.label, record.character = nil, nil, nil, nil
+end
+local function addPlayerMarker(other)
+ if other ~= player and not playerMarkers[other] then playerMarkers[other] = {} end
+end
+connect(Players.PlayerAdded, addPlayerMarker)
+connect(Players.PlayerRemoving, function(other)
+ local record = playerMarkers[other]
+ if record then clearPlayerMarker(record); playerMarkers[other] = nil end
+end)
+for _, other in ipairs(Players:GetPlayers()) do addPlayerMarker(other) end
+updatePlayerESP = function()
+ if not alive then return end
+ local settings = categories.players
+ local root = localRoot()
+ for other, record in pairs(playerMarkers) do
+  local character = other.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  local anchor = character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+  if record.character ~= character then clearPlayerMarker(record) end
+  local visible = settings.enabled and root ~= nil and humanoid ~= nil and humanoid.Health > 0
+   and anchor ~= nil and anchor:IsA("BasePart") and anchor:IsDescendantOf(Workspace)
+  if visible and not record.highlight then
+   record.character = character
+   local highlight = Instance.new("Highlight")
+   highlight.Name = "LocalPlayerESP"
+   highlight.Adornee = character
+   highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+   highlight.FillTransparency = 0.65
+   highlight.OutlineTransparency = 0
+   highlight.Parent = controller
+   local billboard = Instance.new("BillboardGui")
+   billboard.Name = "LocalPlayerESPLabel"
+   billboard.Size = UDim2.fromOffset(260, 24)
+   billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
+   billboard.AlwaysOnTop = true
+   billboard.Parent = controller
+   local label = Instance.new("TextLabel")
+   label.Size = UDim2.fromScale(1, 1)
+   label.BackgroundTransparency = 1
+   label.Font = Enum.Font.GothamMedium
+   label.TextSize = 12
+   label.TextStrokeTransparency = 0.2
+   label.Parent = billboard
+   record.highlight, record.billboard, record.label = highlight, billboard, label
+  end
+  if record.highlight then
+   record.highlight.Enabled = visible
+   record.billboard.Enabled = visible
+   if visible then
+    record.highlight.FillColor = settings.color
+    record.highlight.OutlineColor = settings.color
+    record.label.TextColor3 = settings.color
+    record.billboard.Adornee = anchor
+    -- Default Roblox scale: one stud is 0.28 metres.
+    local metres = math.floor((root.Position - anchor.Position).Magnitude * 0.28 + 0.5)
+    record.label.Text = string.format("%s [%dm]", other.DisplayName, metres)
+   end
+  end
+ end
+end
+connect(controller.Destroying, function()
+ for _, record in pairs(playerMarkers) do clearPlayerMarker(record) end
+ table.clear(playerMarkers)
+end)
+task.spawn(function()
+ while alive do
+  if categories.players.enabled then updatePlayerESP() end
+  task.wait(0.3)
+ end
 end)
