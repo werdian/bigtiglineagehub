@@ -16,19 +16,22 @@ controller.Name = CONTROLLER_NAME
 controller.Parent = Workspace
 local alive, hubVisible = true, true
 local connections, watched, entries = {}, {}, {}
+local cleanupActions = {}
 local categories = {
+ quests = {name = "Quest NPCs", label = "Quest NPC", description = "Quest names and distances", color = Color3.fromRGB(65, 220, 245), enabled = false},
  players = {name = "Player ESP", description = "Team color, distance and held item", color = Color3.fromRGB(255, 55, 65), enabled = false},
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
 	merchant = {name = "Traveling merchant", label = "พ่อค้าพเนจร", description = "appears every 20 minutes", color = Color3.fromRGB(180, 70, 255), enabled = true},
 	doors = {name = "Trick-or-treat doors", label = "Trick or Treat", description = "hold candy bucket to show", color = Color3.fromRGB(255, 155, 45), enabled = true},
 }
+local questNames = {Quest = "General Quest", Quest1 = "Glock Quest", Quest2 = "Speed Loader Quest", Quest3 = "M1911 Quest"}
 local gui, updatePanel, updateStockPanel
 local updatePlayerESP
 local aimCircle
 local refreshPrompt, updateVisuals
 local aimGui
 local aimSettings = {
- name = "Silent aim", description = "Closest player inside the FOV",
+ name = "Silent aim", description = "Head / body: 50% each per shot",
  color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false, radius = 90, maxDistance = 250,
  status = "Silent aim: checking weapon support…",
 }
@@ -63,6 +66,39 @@ local function setAutoEnabled(enabled, status)
 	if updatePanel then updatePanel(hubVisible) end
 end
 
+local moveGarbageCursor = type(mousemoveabs) == "function" and mousemoveabs or nil
+local garbageSupported = inspectConnections ~= nil and moveGarbageCursor ~= nil
+local releaseGarbageInput
+local garbageSettings = {
+ name = "Auto garbage minigame", description = "Moves and holds over garbage targets",
+ color = Color3.fromRGB(110, 225, 140), enabled = false,
+ status = garbageSupported and "Garbage: OFF" or "Garbage needs getconnections and mousemoveabs.",
+}
+local function setGarbageEnabled(enabled, status)
+ garbageSettings.enabled = enabled == true and garbageSupported
+ if not garbageSettings.enabled and releaseGarbageInput then releaseGarbageInput() end
+ garbageSettings.status = status or (not garbageSupported and "Garbage needs getconnections and mousemoveabs."
+  or (garbageSettings.enabled and "Garbage: ON — waiting for a minigame." or "Garbage: OFF"))
+ if updatePanel then updatePanel(hubVisible) end
+end
+
+local staminaRead = (debug and debug.getupvalue) or getupvalue
+local staminaWrite = (debug and debug.setupvalue) or setupvalue
+local staminaSupported = inspectConnections ~= nil and type(staminaRead) == "function" and type(staminaWrite) == "function"
+local restoreStamina
+local staminaSettings = {
+ name = "Infinite stamina", description = "Locks local stamina at 100",
+ color = Color3.fromRGB(245, 200, 80), enabled = false,
+ status = staminaSupported and "Stamina: OFF" or "Stamina needs getconnections and upvalue read/write support.",
+}
+local function setStaminaEnabled(enabled, status)
+ staminaSettings.enabled = enabled == true and staminaSupported
+ if not staminaSettings.enabled and restoreStamina then restoreStamina() end
+ staminaSettings.status = status or (not staminaSupported and "Stamina needs getconnections and upvalue read/write support."
+  or (staminaSettings.enabled and "Stamina: locating RunSystem…" or "Stamina: OFF"))
+ if updatePanel then updatePanel(hubVisible) end
+end
+
 local function connect(signal, callback)
 	local connection = signal:Connect(callback)
 	table.insert(connections, connection)
@@ -78,7 +114,7 @@ local function removeEntry(prompt)
 	if entry.goldenBox then entry.goldenBox:Destroy() end
 end
 
-local function createEntry(prompt, categoryKey, target, anchor)
+local function createEntry(prompt, categoryKey, target, anchor, displayName)
 	local category = categories[categoryKey]
 	local highlight = Instance.new("Highlight")
 	highlight.Name = "LocalVisualHighlight"
@@ -111,7 +147,7 @@ local function createEntry(prompt, categoryKey, target, anchor)
 	label.Text = category.label
 	label.Parent = billboard
 	local entry = {
-		category = categoryKey, target = target, anchor = anchor,
+		category = categoryKey, target = target, anchor = anchor, displayName = displayName,
 		highlight = highlight, billboard = billboard, label = label,
 		lastDistance = nil,
 	}
@@ -171,7 +207,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 		subtitle.Text = selected
 	end
-	for index, name in ipairs({"VISUALS", "AUTO", "STOCK"}) do
+	for index, name in ipairs({"VISUALS", "AUTO", "AIM", "STOCK", "MISC"}) do
 		pages[name] = new("Frame", {Name = name, BackgroundTransparency = 1,
 			Position = UDim2.fromOffset(126, 64), Size = UDim2.new(1, -138, 1, -108),
 			Visible = false}, panel)
@@ -183,18 +219,26 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(button.Activated:Connect(function() selectTab(name) end))
 	end
 	selectTab("VISUALS")
-	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 248)}, pages.VISUALS)
+	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 258)
+	autoStatus.Position = UDim2.fromOffset(0, 128)
 	autoStatus.Size = UDim2.new(1, 0, 0, 44)
 	autoStatus.TextWrapped = true
- local aimStatus = label(pages.AUTO, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
- aimStatus.Position = UDim2.fromOffset(0, 308)
+ local aimStatus = label(pages.AIM, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
+ aimStatus.Position = UDim2.fromOffset(0, 200)
  aimStatus.Size = UDim2.new(1, 0, 0, 50)
  aimStatus.TextWrapped = true
+ local garbageStatus = label(pages.AUTO, garbageSettings.status, 12, Color3.fromRGB(150, 166, 198))
+ garbageStatus.Position = UDim2.fromOffset(0, 178)
+ garbageStatus.Size = UDim2.new(1, 0, 0, 65)
+ garbageStatus.TextWrapped = true
+ local staminaStatus = label(pages.MISC, staminaSettings.status, 12, Color3.fromRGB(150, 166, 198))
+ staminaStatus.Position = UDim2.fromOffset(0, 68)
+ staminaStatus.Size = UDim2.new(1, 0, 0, 85)
+ staminaStatus.TextWrapped = true
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "auto", "aim"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -207,11 +251,11 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category = key == "auto" and autoSettings or (key == "aim" and aimSettings or categories[key])
+		local category = key == "auto" and autoSettings or (key == "aim" and aimSettings or (key == "garbage" and garbageSettings or (key == "stamina" and staminaSettings or categories[key])))
 		local accent = category.color
-		local rowParent = (key == "auto" or key == "aim") and pages.AUTO or cards
+		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage") and pages.AUTO or cards))
 		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
-		if key == "aim" then row.Position = UDim2.fromOffset(0, 62) end
+		if key == "garbage" then row.Position = UDim2.fromOffset(0, 62) end
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
@@ -221,6 +265,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(row.Activated:Connect(function()
 			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
 			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
+			elseif key == "garbage" then setGarbageEnabled(not garbageSettings.enabled)
+			elseif key == "stamina" then setStaminaEnabled(not staminaSettings.enabled)
 			else setCategory(key, not categories[key].enabled) end
 		end))
 		setSwitch(key, category.enabled == true, true)
@@ -228,7 +274,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 
  local function createAimSlider(name, title, y, key, minimum, maximum, unit, setValue)
  local slider = new("Frame", {Name = name, BackgroundTransparency = 1,
-  Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 60)}, pages.AUTO)
+  Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 60)}, pages.AIM)
  local radiusLabel = label(slider, "", 12, Color3.fromRGB(230, 235, 246))
  radiusLabel.Size = UDim2.new(1, 0, 0, 20)
  local sliderInput = new("TextButton", {Text = "", BackgroundTransparency = 1, AutoButtonColor = false,
@@ -271,8 +317,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
  end))
  refreshRadius()
  end
- createAimSlider("FOVSlider", "FOV RADIUS", 128, "radius", 20, 300, " px", setAimRadius)
- createAimSlider("AimDistanceSlider", "MAX DISTANCE", 192, "maxDistance", 10, 1000, " m", setAimDistance)
+ createAimSlider("FOVSlider", "FOV RADIUS", 66, "radius", 20, 300, " px", setAimRadius)
+ createAimSlider("AimDistanceSlider", "MAX DISTANCE", 130, "maxDistance", 10, 1000, " m", setAimDistance)
 
 	local stockCard = new("Frame", {
 		Name = "DrugStock", Position = UDim2.fromOffset(0, 0),
@@ -393,6 +439,10 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
 		setSwitch("auto", autoSettings.enabled, false)
 		autoStatus.Text = autoSettings.status
+		setSwitch("garbage", garbageSettings.enabled, false)
+		garbageStatus.Text = garbageSettings.status
+		setSwitch("stamina", staminaSettings.enabled, false)
+		staminaStatus.Text = staminaSettings.status
 		setSwitch("aim", aimSettings.enabled, false)
 		aimStatus.Text = aimSettings.status
 	end
@@ -409,6 +459,13 @@ local function classify(prompt)
 		local part = prompt:FindFirstAncestorWhichIsA("BasePart")
 		local anchor = head and head:IsA("BasePart") and head or part
 		if anchor then
+   local questFolder = Workspace:FindFirstChild("Quest")
+   if questFolder and model:IsDescendantOf(questFolder) then
+    local name = questNames[model.Name]
+    if name or (model.Parent == questFolder and model:FindFirstChildOfClass("Humanoid")) then
+     return "quests", model, anchor, name or (model.Name .. " Quest")
+    end
+   end
 			if model.Name == "ขายยา" and prompt.ObjectText == "ขายยา" and prompt.ActionText == "ขายยา" then
 				return "buyers", model, anchor
 			end
@@ -496,7 +553,7 @@ local function renderEntry(prompt, entry, root, now)
 	local enabled = category.enabled
 	if entry.category == "doors" then
 		enabled = enabled and doorAvailable(prompt, now)
-	else
+	elseif entry.category ~= "quests" then
 		enabled = enabled and prompt.Enabled
 	end
 	updateGoldenBox(entry, enabled and golden)
@@ -507,7 +564,7 @@ local function renderEntry(prompt, entry, root, now)
 	if styleChanged or (enabled and distance ~= entry.lastDistance) then
 		entry.lastDistance = distance
 		local heading = golden and '<font size="26"><b>5X GOLDEN</b></font>\n' or ""
-		entry.label.Text = heading .. category.label .. (distance and string.format("\n%d studs", distance) or "\n-- studs")
+		entry.label.Text = heading .. (entry.displayName or category.label) .. (distance and string.format("\n%d studs", distance) or "\n-- studs")
 	end
 end
 
@@ -519,12 +576,12 @@ end
 refreshPrompt = function(prompt)
 	if not alive or not watched[prompt] then return end
 	if not prompt:IsDescendantOf(Workspace) then removeEntry(prompt); return end
-	local key, target, anchor = classify(prompt)
+	local key, target, anchor, displayName = classify(prompt)
 	if not key then removeEntry(prompt); return end
 	local entry = entries[prompt]
-	if not entry or entry.target ~= target or entry.anchor ~= anchor or entry.category ~= key then
+	if not entry or entry.target ~= target or entry.anchor ~= anchor or entry.category ~= key or entry.displayName ~= displayName then
 		removeEntry(prompt)
-		entry = createEntry(prompt, key, target, anchor)
+		entry = createEntry(prompt, key, target, anchor, displayName)
 	end
 	renderEntry(prompt, entry, localRoot(), Workspace:GetServerTimeNow())
 end
@@ -609,9 +666,12 @@ end)
 connect(player.CharacterAdded, function() task.defer(updateVisuals) end)
 connect(player:GetAttributeChangedSignal("GoldClaimed"), updateVisuals)
 connect(controller.Destroying, function()
+	if releaseGarbageInput then releaseGarbageInput() end
+	if restoreStamina then restoreStamina() end
 	alive = false
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	for prompt in pairs(watched) do unwatch(prompt) end
+	for _, cleanup in ipairs(cleanupActions) do pcall(cleanup) end
 	gui:Destroy()
 end)
 
@@ -784,34 +844,52 @@ outline.Thickness = 1.5
 outline.Transparency = 0.15
 outline.Parent = circle
 local restoreProjectile
-connect(controller.Destroying, function()
+table.insert(cleanupActions, function()
  aimSettings.enabled = false
  aimGui:Destroy()
  if restoreProjectile then restoreProjectile() end
 end)
 
+local aimRandom = Random.new()
 local function selectAimPart()
  local camera = Workspace.CurrentCamera
  local root = localRoot()
  if not camera or not root then return nil end
  local center = camera.ViewportSize * 0.5
- local best, bestDistance = nil, aimSettings.radius * aimSettings.radius
+ local bestHead, bestBody
+ local bestDistance = aimSettings.radius * aimSettings.radius
+ local function inRange(part)
+  return part and part:IsA("BasePart")
+   and (part.Position - root.Position).Magnitude * 0.28 <= aimSettings.maxDistance
+ end
+ local function screenDistance(part)
+  if not part then return math.huge end
+  local point, visible = camera:WorldToViewportPoint(part.Position)
+  if not visible or point.Z <= 0 then return math.huge end
+  return (point.X - center.X)^2 + (point.Y - center.Y)^2
+ end
  for _, candidate in ipairs(Players:GetPlayers()) do
   if candidate ~= player then
    local character = candidate.Character
    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-   local part = character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
-   if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart")
-    and (part.Position - root.Position).Magnitude * 0.28 <= aimSettings.maxDistance then
-    local point, visible = camera:WorldToViewportPoint(part.Position)
-    if visible and point.Z > 0 then
-     local distance = (point.X - center.X)^2 + (point.Y - center.Y)^2
-     if distance <= bestDistance then best, bestDistance = part, distance end
+   if humanoid and humanoid.Health > 0 then
+    local head = character:FindFirstChild("Head")
+    local body = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+     or character:FindFirstChild("HumanoidRootPart")
+    if not inRange(head) then head = nil end
+    if not inRange(body) then body = nil end
+    local distance = math.min(screenDistance(head), screenDistance(body))
+    if distance <= bestDistance then
+     bestHead, bestBody, bestDistance = head, body, distance
     end
    end
   end
  end
- return best
+ -- One random choice per shot; all pellets and visual effects share that choice.
+ if bestHead and bestBody then
+  return aimRandom:NextInteger(1, 2) == 1 and bestHead or bestBody
+ end
+ return bestHead or bestBody
 end
 
 local function redirectDirections(directions, origin, position)
@@ -946,7 +1024,7 @@ updatePlayerESP = function()
   end
  end
 end
-connect(controller.Destroying, function()
+table.insert(cleanupActions, function()
  for _, record in pairs(playerMarkers) do clearPlayerMarker(record) end
  table.clear(playerMarkers)
 end)
@@ -955,4 +1033,211 @@ task.spawn(function()
   if categories.players.enabled then updatePlayerESP() end
   task.wait(0.3)
  end
+end)
+
+local function garbageControls()
+ local screen = playerGui:FindFirstChild("MiniGameUI")
+ local trash = screen and screen:FindFirstChild("TrashFrame")
+ local box = trash and trash:FindFirstChild("DarkBox")
+ if not screen or not screen.Enabled or not trash or not trash.Visible or not box or not box.Visible then return nil end
+ local catcher = box:FindFirstChild("InputCatcher")
+ local light = box:FindFirstChild("Light")
+ if not catcher or not catcher:IsA("GuiButton") or not light then return nil end
+ return box, catcher, light
+end
+local function nextGarbageTarget(box)
+ for _, target in ipairs(box:GetChildren()) do
+  if target.Name == "Target" and target:IsA("GuiObject") and target.Visible then
+   local icon = target:FindFirstChild("Icon")
+   if icon and icon.ImageColor3 ~= Color3.fromRGB(120, 220, 140) then return target end
+  end
+ end
+ return nil
+end
+local function singleInputCallback(signal)
+ local callback
+ for _, connection in ipairs(inspectConnections(signal)) do
+  if connection.Enabled ~= false and connection.ForeignState ~= true and type(connection.Function) == "function" then
+   assert(not callback, "Multiple garbage input handlers found")
+   callback = connection.Function
+  end
+ end
+ assert(callback, "Garbage input handler is unavailable")
+ return callback
+end
+local heldGarbageRelease
+releaseGarbageInput = function()
+ local callback = heldGarbageRelease
+ heldGarbageRelease = nil
+ if callback then task.spawn(function() pcall(callback, true) end) end
+end
+local function garbageError(message)
+ if not alive then return end
+ setGarbageEnabled(false, "Garbage stopped: " .. tostring(message):sub(1, 140))
+ warn("Lineage Hub garbage: " .. tostring(message))
+end
+task.spawn(function()
+ local currentTarget, startedAt
+ while alive do
+  if not garbageSettings.enabled or UserInputService:GetFocusedTextBox() then
+   releaseGarbageInput()
+   currentTarget = nil
+   task.wait(0.25)
+  else
+   local box, catcher, light = garbageControls()
+   local target = box and nextGarbageTarget(box)
+   if not target then
+    releaseGarbageInput()
+    currentTarget = nil
+    task.wait(0.2)
+   else
+    if target ~= currentTarget then
+     releaseGarbageInput()
+     currentTarget, startedAt = target, os.clock()
+    end
+    if os.clock() - startedAt > 18 then
+     garbageError("No target completion after 18 seconds.")
+    else
+     local point = target.AbsolutePosition + target.AbsoluteSize * 0.5
+     local moved, message = pcall(moveGarbageCursor, point.X, point.Y)
+     if not moved then garbageError(message) end
+     task.wait(0.08)
+     local activeBox, activeCatcher, activeLight = garbageControls()
+     if alive and garbageSettings.enabled and activeBox == box and activeCatcher == catcher
+      and target.Parent == box and not UserInputService:GetFocusedTextBox() then
+      local mouse = UserInputService:GetMouseLocation()
+      if (mouse - point).Magnitude > 45 then
+       garbageError("Cursor did not reach the target. Keep Roblox focused.")
+      elseif not activeLight.Visible then
+       local ok, down, up = pcall(function()
+        return singleInputCallback(catcher.MouseButton1Down), singleInputCallback(catcher.MouseButton1Up)
+       end)
+       if not ok then garbageError(down) else
+        heldGarbageRelease = up
+        task.spawn(function()
+         if not alive or not garbageSettings.enabled or garbageControls() ~= box then return end
+         local success, errorMessage = pcall(down)
+         if not success then garbageError(errorMessage) end
+        end)
+       end
+      end
+     end
+    end
+    task.wait(0.05)
+   end
+  end
+ end
+end)
+
+local staminaBinding
+local function readStaminaUpvalue(callback, index)
+ local first, second = staminaRead(callback, index)
+ if type(first) == "string" then return second end
+ return first
+end
+local function validStamina(value)
+ return type(value) == "number" and value >= 0 and value <= 100
+end
+restoreStamina = function()
+ local binding = staminaBinding
+ staminaBinding = nil
+ if not binding then return end
+ pcall(function()
+  if readStaminaUpvalue(binding.run, 12) == 0 then staminaWrite(binding.run, 12, binding.runCost) end
+ end)
+ pcall(function()
+  if readStaminaUpvalue(binding.jump, 5) == 0 then staminaWrite(binding.jump, 5, binding.jumpCost) end
+ end)
+end
+local function locateStamina(humanoid)
+ local run, jump
+ for _, connection in ipairs(inspectConnections(game:GetService("RunService").RenderStepped)) do
+  local callback = connection.Function
+  if connection.Enabled ~= false and connection.ForeignState ~= true and type(callback) == "function" then
+   local ok, matches = pcall(function()
+    return readStaminaUpvalue(callback, 2) == player and readStaminaUpvalue(callback, 6) == humanoid
+     and type(readStaminaUpvalue(callback, 3)) == "boolean" and type(readStaminaUpvalue(callback, 5)) == "boolean"
+     and validStamina(readStaminaUpvalue(callback, 10))
+     and type(readStaminaUpvalue(callback, 11)) == "number" and type(readStaminaUpvalue(callback, 12)) == "number"
+   end)
+   if ok and matches then assert(not run, "Ambiguous stamina handler"); run = callback end
+  end
+ end
+ for _, connection in ipairs(inspectConnections(humanoid.StateChanged)) do
+  local callback = connection.Function
+  if connection.Enabled ~= false and connection.ForeignState ~= true and type(callback) == "function" then
+   local ok, matches = pcall(function()
+    return readStaminaUpvalue(callback, 1) == Enum.HumanoidStateType.Jumping
+     and readStaminaUpvalue(callback, 3) == player and validStamina(readStaminaUpvalue(callback, 4))
+     and type(readStaminaUpvalue(callback, 5)) == "number"
+   end)
+   if ok and matches then assert(not jump, "Ambiguous jump handler"); jump = callback end
+  end
+ end
+ if not run or not jump then return nil end
+ return {run = run, jump = jump, humanoid = humanoid,
+  runCost = readStaminaUpvalue(run, 12), jumpCost = readStaminaUpvalue(jump, 5)}
+end
+local function lockStamina(binding)
+ local runCost = readStaminaUpvalue(binding.run, 12)
+ local jumpCost = readStaminaUpvalue(binding.jump, 5)
+ if runCost ~= 0 then binding.runCost = runCost end
+ if jumpCost ~= 0 then binding.jumpCost = jumpCost end
+ staminaWrite(binding.run, 10, 100)
+ staminaWrite(binding.run, 12, 0)
+ staminaWrite(binding.jump, 5, 0)
+end
+connect(game:GetService("RunService").Heartbeat, function()
+ if not alive or not staminaSettings.enabled or not staminaBinding then return end
+ local character = player.Character
+ if not character or staminaBinding.humanoid.Parent ~= character then restoreStamina(); return end
+ local ok, message = pcall(lockStamina, staminaBinding)
+ if not ok then setStaminaEnabled(false, "Stamina stopped: " .. tostring(message):sub(1, 140)) end
+end)
+task.spawn(function()
+ local attempts = 0
+ while alive do
+  if staminaSettings.enabled and not staminaBinding then
+   local character = player.Character
+   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+   if humanoid and humanoid.Health > 0 then
+    local ok, binding = pcall(locateStamina, humanoid)
+    if not ok then
+     setStaminaEnabled(false, "Stamina stopped: " .. tostring(binding):sub(1, 140))
+    elseif binding then
+     staminaBinding = binding
+     local locked, message = pcall(function()
+      lockStamina(binding)
+      assert(readStaminaUpvalue(binding.run, 10) == 100 and readStaminaUpvalue(binding.run, 12) == 0
+       and readStaminaUpvalue(binding.jump, 5) == 0, "Runner did not apply the stamina lock")
+     end)
+     if locked then
+      attempts = 0
+      staminaSettings.status = "Stamina: locked at 100"
+      updatePanel(hubVisible)
+     else setStaminaEnabled(false, "Stamina stopped: " .. tostring(message):sub(1, 140)) end
+    else
+     attempts += 1
+     if attempts >= 20 then setStaminaEnabled(false, "Stamina unavailable: this RunSystem layout is not supported.") end
+    end
+   end
+  else attempts = 0 end
+  task.wait(0.5)
+ end
+end)
+
+task.spawn(function()
+ local job = ReplicatedStorage:WaitForChild("Job", 10)
+ local gunQuest = job and job:WaitForChild("GunQuest", 10)
+ local module = gunQuest and gunQuest:WaitForChild("GunQuestConfig", 10)
+ if not module or not alive then return end
+ local ok, config = pcall(require, module)
+ if not alive or not ok or type(config) ~= "table" then return end
+ for _, quest in pairs(config) do
+  if type(quest) == "table" and type(quest.npcName) == "string" and type(quest.gunName) == "string" then
+   local name = quest.gunName == "M1911Kimber" and "M1911" or quest.gunName
+   questNames[quest.npcName] = name .. " Quest"
+  end
+ end
+ for prompt in pairs(watched) do refreshPrompt(prompt) end
 end)
