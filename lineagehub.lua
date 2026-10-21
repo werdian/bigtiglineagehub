@@ -66,19 +66,41 @@ local function setAutoEnabled(enabled, status)
 	if updatePanel then updatePanel(hubVisible) end
 end
 
-local moveGarbageCursor = type(mousemoveabs) == "function" and mousemoveabs or nil
-local garbageSupported = inspectConnections ~= nil and moveGarbageCursor ~= nil
+local garbageRead = (debug and debug.getupvalue) or getupvalue
+local garbageSupported = inspectConnections ~= nil and type(garbageRead) == "function"
 local releaseGarbageInput
+local garbageResumeAt = 0
 local garbageSettings = {
- name = "Auto garbage minigame", description = "Moves and holds over garbage targets",
+ name = "Auto garbage minigame", description = "Virtual hover — leaves your mouse free",
  color = Color3.fromRGB(110, 225, 140), enabled = false,
- status = garbageSupported and "Garbage: OFF" or "Garbage needs getconnections and mousemoveabs.",
+ status = garbageSupported and "Garbage: OFF" or "Garbage needs getconnections and getupvalue.",
 }
+local function garbageCanRun()
+ return alive and garbageSettings.enabled and not hubVisible
+  and os.clock() >= garbageResumeAt and not UserInputService:GetFocusedTextBox()
+end
+local function garbageReadyStatus()
+ return hubVisible and "Garbage: waiting — close the hub with Right Shift."
+  or "Garbage: ON — waiting for a minigame."
+end
 local function setGarbageEnabled(enabled, status)
  garbageSettings.enabled = enabled == true and garbageSupported
  if not garbageSettings.enabled and releaseGarbageInput then releaseGarbageInput() end
- garbageSettings.status = status or (not garbageSupported and "Garbage needs getconnections and mousemoveabs."
-  or (garbageSettings.enabled and "Garbage: ON — waiting for a minigame." or "Garbage: OFF"))
+ garbageSettings.status = status or (not garbageSupported and "Garbage needs getconnections and getupvalue."
+  or (garbageSettings.enabled and garbageReadyStatus() or "Garbage: OFF"))
+ if updatePanel then updatePanel(hubVisible) end
+end
+
+local stopGarbageWalk
+local garbageWalkSettings = {
+ name = "Auto garbage walk", description = "Nearby bags • normal walking speed",
+ color = Color3.fromRGB(110, 225, 140), enabled = false, status = "Walk: OFF",
+}
+local function setGarbageWalkEnabled(enabled)
+ garbageWalkSettings.enabled = enabled == true and garbageSupported
+ if stopGarbageWalk then stopGarbageWalk() end
+ if garbageWalkSettings.enabled then setGarbageEnabled(true) end
+ garbageWalkSettings.status = garbageWalkSettings.enabled and "Walk: close the hub with Right Shift." or "Walk: OFF"
  if updatePanel then updatePanel(hubVisible) end
 end
 
@@ -157,6 +179,10 @@ end
 
 local function setHubVisible(enabled)
 	hubVisible = enabled
+	garbageResumeAt = os.clock() + 0.35
+	if hubVisible and releaseGarbageInput then releaseGarbageInput() end
+	if hubVisible and stopGarbageWalk then stopGarbageWalk() end
+	if garbageSettings.enabled then garbageSettings.status = garbageReadyStatus() end
 	updatePanel(hubVisible)
 end
 
@@ -222,7 +248,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 128)
+	autoStatus.Position = UDim2.fromOffset(0, 186)
 	autoStatus.Size = UDim2.new(1, 0, 0, 44)
 	autoStatus.TextWrapped = true
  local aimStatus = label(pages.AIM, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
@@ -230,15 +256,19 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
  aimStatus.Size = UDim2.new(1, 0, 0, 50)
  aimStatus.TextWrapped = true
  local garbageStatus = label(pages.AUTO, garbageSettings.status, 12, Color3.fromRGB(150, 166, 198))
- garbageStatus.Position = UDim2.fromOffset(0, 178)
- garbageStatus.Size = UDim2.new(1, 0, 0, 65)
+ garbageStatus.Position = UDim2.fromOffset(0, 228)
+ garbageStatus.Size = UDim2.new(1, 0, 0, 44)
  garbageStatus.TextWrapped = true
+ local walkStatus = label(pages.AUTO, garbageWalkSettings.status, 12, Color3.fromRGB(150, 166, 198))
+ walkStatus.Position = UDim2.fromOffset(0, 274)
+ walkStatus.Size = UDim2.new(1, 0, 0, 44)
+ walkStatus.TextWrapped = true
  local staminaStatus = label(pages.MISC, staminaSettings.status, 12, Color3.fromRGB(150, 166, 198))
  staminaStatus.Position = UDim2.fromOffset(0, 68)
  staminaStatus.Size = UDim2.new(1, 0, 0, 85)
  staminaStatus.TextWrapped = true
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "garbageWalk", "aim", "stamina"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -251,11 +281,12 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category = key == "auto" and autoSettings or (key == "aim" and aimSettings or (key == "garbage" and garbageSettings or (key == "stamina" and staminaSettings or categories[key])))
+		local category = ({auto = autoSettings, aim = aimSettings, garbage = garbageSettings, garbageWalk = garbageWalkSettings, stamina = staminaSettings})[key] or categories[key]
 		local accent = category.color
-		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage") and pages.AUTO or cards))
+		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage" or key == "garbageWalk") and pages.AUTO or cards))
 		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
 		if key == "garbage" then row.Position = UDim2.fromOffset(0, 62) end
+		if key == "garbageWalk" then row.Position = UDim2.fromOffset(0, 124) end
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
@@ -265,7 +296,10 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(row.Activated:Connect(function()
 			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
 			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
-			elseif key == "garbage" then setGarbageEnabled(not garbageSettings.enabled)
+			elseif key == "garbage" then
+    setGarbageEnabled(not garbageSettings.enabled)
+    if not garbageSettings.enabled then setGarbageWalkEnabled(false) end
+   elseif key == "garbageWalk" then setGarbageWalkEnabled(not garbageWalkSettings.enabled)
 			elseif key == "stamina" then setStaminaEnabled(not staminaSettings.enabled)
 			else setCategory(key, not categories[key].enabled) end
 		end))
@@ -441,6 +475,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		autoStatus.Text = autoSettings.status
 		setSwitch("garbage", garbageSettings.enabled, false)
 		garbageStatus.Text = garbageSettings.status
+  setSwitch("garbageWalk", garbageWalkSettings.enabled, false)
+  walkStatus.Text = garbageWalkSettings.status
 		setSwitch("stamina", staminaSettings.enabled, false)
 		staminaStatus.Text = staminaSettings.status
 		setSwitch("aim", aimSettings.enabled, false)
@@ -1065,6 +1101,23 @@ local function singleInputCallback(signal)
  assert(callback, "Garbage input handler is unavailable")
  return callback
 end
+local function garbageUpvalue(callback, index)
+ local first, second = garbageRead(callback, index)
+ if type(first) == "string" then return second end
+ return first
+end
+local function virtualGarbageControls(box, catcher, light)
+ local down = singleInputCallback(catcher.MouseButton1Down)
+ local startHold = garbageUpvalue(down, 1)
+ assert(type(startHold) == "function", "Garbage StartHold is unavailable")
+ assert(garbageUpvalue(down, 2) == UserInputService
+  and garbageUpvalue(startHold, 3) == light, "Garbage input layout changed")
+ local updateLight = garbageUpvalue(startHold, 9)
+ assert(type(updateLight) == "function", "Garbage UpdateLight is unavailable")
+ assert(garbageUpvalue(updateLight, 2) == box
+  and garbageUpvalue(updateLight, 3) == light, "Garbage hover layout changed")
+ return {start = startHold, move = updateLight, release = singleInputCallback(catcher.MouseButton1Up)}
+end
 local heldGarbageRelease
 releaseGarbageInput = function()
  local callback = heldGarbageRelease
@@ -1077,50 +1130,36 @@ local function garbageError(message)
  warn("Lineage Hub garbage: " .. tostring(message))
 end
 task.spawn(function()
- local currentTarget, startedAt
+ local currentTarget, startedAt, controls
  while alive do
-  if not garbageSettings.enabled or UserInputService:GetFocusedTextBox() then
+  if not garbageCanRun() then
    releaseGarbageInput()
-   currentTarget = nil
+   currentTarget, startedAt, controls = nil, nil, nil
    task.wait(0.25)
   else
    local box, catcher, light = garbageControls()
    local target = box and nextGarbageTarget(box)
    if not target then
     releaseGarbageInput()
-    currentTarget = nil
+    currentTarget, startedAt, controls = nil, nil, nil
     task.wait(0.2)
    else
     if target ~= currentTarget then
      releaseGarbageInput()
-     currentTarget, startedAt = target, os.clock()
+     currentTarget, startedAt, controls = target, os.clock(), nil
+     local ok, result = pcall(virtualGarbageControls, box, catcher, light)
+     if ok then controls = result else garbageError(result) end
+     -- Let the previous hold release before starting the next target.
+     task.wait()
     end
-    if os.clock() - startedAt > 18 then
-     garbageError("No target completion after 18 seconds.")
-    else
-     local point = target.AbsolutePosition + target.AbsoluteSize * 0.5
-     local moved, message = pcall(moveGarbageCursor, point.X, point.Y)
-     if not moved then garbageError(message) end
-     task.wait(0.08)
-     local activeBox, activeCatcher, activeLight = garbageControls()
-     if alive and garbageSettings.enabled and activeBox == box and activeCatcher == catcher
-      and target.Parent == box and not UserInputService:GetFocusedTextBox() then
-      local mouse = UserInputService:GetMouseLocation()
-      if (mouse - point).Magnitude > 45 then
-       garbageError("Cursor did not reach the target. Keep Roblox focused.")
-      elseif not activeLight.Visible then
-       local ok, down, up = pcall(function()
-        return singleInputCallback(catcher.MouseButton1Down), singleInputCallback(catcher.MouseButton1Up)
-       end)
-       if not ok then garbageError(down) else
-        heldGarbageRelease = up
-        task.spawn(function()
-         if not alive or not garbageSettings.enabled or garbageControls() ~= box then return end
-         local success, errorMessage = pcall(down)
-         if not success then garbageError(errorMessage) end
-        end)
-       end
-      end
+    if controls and garbageCanRun() and garbageControls() == box and target.Parent == box then
+     if os.clock() - startedAt > 18 then
+      garbageError("No target completion after 18 seconds.")
+     else
+      local point = target.AbsolutePosition + target.AbsoluteSize * 0.5
+      heldGarbageRelease = controls.release
+      local ok, message = pcall(light.Visible and controls.move or controls.start, point)
+      if not ok then garbageError(message) end
      end
     end
     task.wait(0.05)
@@ -1128,6 +1167,184 @@ task.spawn(function()
   end
  end
 end)
+
+-- Walking uses the game's speed and real prompt hold duration.
+do
+ local PathfindingService = game:GetService("PathfindingService")
+ local retryAt = setmetatable({}, {__mode = "k"})
+ local walkingHumanoid, heldPrompt
+ local generation = 0
+ local function status(message)
+  if garbageWalkSettings.status == message then return end
+  garbageWalkSettings.status = message
+  if updatePanel then updatePanel(hubVisible) end
+ end
+ stopGarbageWalk = function()
+  generation += 1
+  if heldPrompt then
+   local prompt = heldPrompt
+   heldPrompt = nil
+   pcall(function() prompt:InputHoldEnd() end)
+  end
+  if walkingHumanoid and walkingHumanoid.Parent then
+   walkingHumanoid:Move(Vector3.zero)
+   local root = walkingHumanoid.RootPart
+   if root then walkingHumanoid:MoveTo(root.Position) end
+  end
+  walkingHumanoid = nil
+ end
+ table.insert(cleanupActions, stopGarbageWalk)
+ local function characterParts()
+  local character = player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  local root = character and character:FindFirstChild("HumanoidRootPart")
+  if humanoid and root and humanoid.Health > 0 and not humanoid.Sit then
+   return humanoid, root
+  end
+ end
+ local function garbageFolder()
+  local job = Workspace:FindFirstChild("Job")
+  return job and job:FindFirstChild("ขยะ")
+ end
+ local function bagForPrompt(prompt)
+  if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return nil end
+  local part = prompt.Parent
+  local bag = part and part.Parent
+  local folder = garbageFolder()
+  if folder and part:IsA("BasePart") and part.Name == "Prompt"
+   and bag and bag:IsA("Model") and bag.Name == "Dirty" and bag.Parent == folder then
+   return bag, part.Position
+  end
+ end
+ local function anyMinigame()
+  local screen = playerGui:FindFirstChild("MiniGameUI")
+  return screen and screen.Enabled
+ end
+ local function canWalk(token, humanoid)
+  return token == generation and garbageWalkSettings.enabled and garbageCanRun()
+   and humanoid.Parent == player.Character and humanoid.Health > 0 and not humanoid.Sit
+   and not anyMinigame()
+ end
+ local function inRange(prompt, root)
+  local bag, position = bagForPrompt(prompt)
+  if not bag or (position - root.Position).Magnitude > math.max(0, math.min(8, prompt.MaxActivationDistance) - 0.5) then
+   return false
+  end
+  -- Even prompts with sight checks disabled must not be activated through a wall.
+  local params = RaycastParams.new()
+  params.FilterType = Enum.RaycastFilterType.Exclude
+  params.FilterDescendantsInstances = {player.Character}
+  local hit = Workspace:Raycast(root.Position, position - root.Position, params)
+  return not hit or hit.Instance:IsDescendantOf(bag)
+ end
+ local function nearestBag(root)
+  local folder = garbageFolder()
+  if not folder then return nil end
+  local selected, best = nil, 120
+  for _, bag in ipairs(folder:GetChildren()) do
+   if bag:IsA("Model") and bag.Name == "Dirty" then
+    local part = bag:FindFirstChild("Prompt")
+    local prompt = part and part:FindFirstChildOfClass("ProximityPrompt")
+    local _, position = bagForPrompt(prompt)
+    if position and (retryAt[prompt] or 0) <= os.clock() then
+     local distance = (position - root.Position).Magnitude
+     if distance < best then selected, best = prompt, distance end
+    end
+   end
+  end
+  return selected
+ end
+ local function approach(prompt, humanoid, root, token)
+  if inRange(prompt, root) then return true end
+  local _, destination = bagForPrompt(prompt)
+  if not destination then return false end
+  local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+  path:ComputeAsync(root.Position, destination)
+  if not canWalk(token, humanoid) or path.Status ~= Enum.PathStatus.Success then return false end
+  for _, waypoint in ipairs(path:GetWaypoints()) do
+   if not canWalk(token, humanoid) or not bagForPrompt(prompt) then return false end
+   if inRange(prompt, root) then return true end
+   walkingHumanoid = humanoid
+   if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+   humanoid:MoveTo(waypoint.Position)
+   local deadline = os.clock() + 7
+   local progressAt, lastPosition = os.clock(), root.Position
+   repeat
+    task.wait(0.1)
+    if not canWalk(token, humanoid) or not bagForPrompt(prompt) then return false end
+    if inRange(prompt, root) then return true end
+    if (root.Position - lastPosition).Magnitude > 0.75 then
+     progressAt, lastPosition = os.clock(), root.Position
+    end
+    if os.clock() - progressAt > 2.5 then return false end
+   until (root.Position - waypoint.Position).Magnitude < 2.5 or os.clock() > deadline
+   if os.clock() > deadline then return false end
+  end
+  return inRange(prompt, root)
+ end
+ local function collect(prompt, humanoid, root, token)
+  status("Walk: approaching a garbage bag…")
+  if not approach(prompt, humanoid, root, token) then return end
+  if not canWalk(token, humanoid) or not inRange(prompt, root) then return end
+  humanoid:Move(Vector3.zero)
+  humanoid:MoveTo(root.Position)
+  walkingHumanoid = nil
+  status("Walk: holding the bag's interaction prompt…")
+  heldPrompt = prompt
+  prompt:InputHoldBegin()
+  local holdUntil = os.clock() + prompt.HoldDuration + 0.15
+  while os.clock() < holdUntil do
+   if anyMinigame() then break end
+   if not canWalk(token, humanoid) or not inRange(prompt, root) then return end
+   task.wait(0.05)
+  end
+  if heldPrompt == prompt then
+   heldPrompt = nil
+   prompt:InputHoldEnd()
+  end
+  local deadline = os.clock() + 8
+  while not anyMinigame() and canWalk(token, humanoid) and os.clock() < deadline do
+   task.wait(0.1)
+  end
+  if anyMinigame() then
+   retryAt[prompt] = os.clock() + 60
+   status("Walk: waiting for the minigame to finish…")
+  else
+   status("Walk: bag did not start; trying another nearby bag.")
+  end
+ end
+ task.spawn(function()
+  while alive do
+   if not garbageWalkSettings.enabled or not garbageCanRun() then
+    if walkingHumanoid or heldPrompt then stopGarbageWalk() end
+    if garbageWalkSettings.enabled then
+     status(hubVisible and "Walk: close the hub with Right Shift." or "Walk: waiting for auto garbage / text input.")
+    end
+    task.wait(0.25)
+   elseif anyMinigame() then
+    status("Walk: waiting for the minigame to finish…")
+    task.wait(0.25)
+   else
+    local humanoid, root = characterParts()
+    local prompt = root and nearestBag(root)
+    if prompt then
+     -- Back off unavailable or blocked bags instead of repeatedly holding their prompt.
+     retryAt[prompt] = os.clock() + 30
+     local ok, message = pcall(collect, prompt, humanoid, root, generation)
+     stopGarbageWalk()
+     if not ok then
+      status("Walk: could not use this bag; retrying another.")
+      warn("Lineage Hub garbage walk: " .. tostring(message))
+     end
+     task.wait(0.5)
+    else
+     status(root and "Walk: no available bags within 120 studs." or "Walk: waiting for your character.")
+     task.wait(1)
+    end
+   end
+  end
+ end)
+end
 
 local staminaBinding
 local function readStaminaUpvalue(callback, index)
