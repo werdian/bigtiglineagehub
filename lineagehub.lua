@@ -26,6 +26,8 @@ local categories = {
 }
 local questNames = {Quest = "General Quest", Quest1 = "Glock Quest", Quest2 = "Speed Loader Quest", Quest3 = "M1911 Quest"}
 local gui, updatePanel, updateStockPanel
+local restockSettings = {name = "Restock notifications", description = "", color = Color3.fromRGB(100, 235, 160), enabled = true}
+local hideRestockToast
 local updatePlayerESP
 local aimCircle
 local refreshPrompt, updateVisuals
@@ -242,7 +244,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 
 
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina", "restocks"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -255,11 +257,12 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category = ({auto = autoSettings, aim = aimSettings, garbage = garbageSettings, stamina = staminaSettings})[key] or categories[key]
+		local category = ({auto = autoSettings, aim = aimSettings, garbage = garbageSettings, stamina = staminaSettings, restocks = restockSettings})[key] or categories[key]
 		local accent = category.color
-		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage") and pages.AUTO or cards))
+		local rowParent = key == "restocks" and pages.STOCK or (key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage") and pages.AUTO or cards)))
 		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
 		if key == "garbage" then row.Position = UDim2.fromOffset(0, 62) end
+  if key == "restocks" then row.Position = UDim2.fromOffset(0, 140) end
 
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
@@ -272,6 +275,10 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
 			elseif key == "garbage" then setGarbageEnabled(not garbageSettings.enabled)
 			elseif key == "stamina" then setStaminaEnabled(not staminaSettings.enabled)
+   elseif key == "restocks" then
+    restockSettings.enabled = not restockSettings.enabled
+    if not restockSettings.enabled and hideRestockToast then hideRestockToast() end
+    setSwitch("restocks", restockSettings.enabled, false)
 			else setCategory(key, not categories[key].enabled) end
 		end))
 		setSwitch(key, category.enabled == true, true)
@@ -373,12 +380,13 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	toastText.Size = UDim2.new(1, -28, 0, 48)
 	toastText.TextWrapped = true
 	local toastVersion = 0
+ hideRestockToast = function() toastVersion += 1; toast.Visible = false end
 	local function updateStockPanel(counts, increases)
 		for name, value in pairs(stockLabels) do
 			local count = counts[name]
 			value.Text = name .. ": " .. (count ~= nil and tostring(count) or "--")
 		end
-		if #increases == 0 then return end
+		if not restockSettings.enabled or #increases == 0 then return end
 		toastVersion += 1
 		local version = toastVersion
 		toastText.Text = table.concat(increases, "  •  ")
@@ -1160,6 +1168,25 @@ do
  local retryAt = setmetatable({}, {__mode = "k"})
  local walkingHumanoid, heldPrompt
  local generation = 0
+ local movementControls, controlsDisabled
+ local prompts, shown = {}, {}
+ local promptService = game:GetService("ProximityPromptService")
+ connect(promptService.PromptShown, function(prompt) shown[prompt] = true end)
+ connect(promptService.PromptHidden, function(prompt) shown[prompt] = nil end)
+ local function takeMovementControl()
+  if not movementControls then
+   local scripts = player:FindFirstChild("PlayerScripts")
+   local module = scripts and scripts:FindFirstChild("PlayerModule")
+   if module then
+    local ok, result = pcall(function() return require(module):GetControls() end)
+    if ok then movementControls = result end
+   end
+  end
+  if movementControls and not controlsDisabled and movementControls.controlsEnabled ~= false then
+   movementControls:Disable()
+   controlsDisabled = true
+  end
+ end
  stopGarbageWalk = function()
   generation += 1
   if heldPrompt then
@@ -1173,6 +1200,10 @@ do
    if root then walkingHumanoid:MoveTo(root.Position) end
   end
   walkingHumanoid = nil
+  if controlsDisabled then
+   controlsDisabled = false
+   movementControls:Enable()
+  end
  end
  table.insert(cleanupActions, stopGarbageWalk)
  local function characterParts()
@@ -1183,20 +1214,24 @@ do
    return humanoid, root
   end
  end
- local function garbageFolder()
-  local job = Workspace:FindFirstChild("Job")
-  return job and job:FindFirstChild("ขยะ")
- end
  local function bagForPrompt(prompt)
-  if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return nil end
+  if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled
+   or not prompt:IsDescendantOf(Workspace) then return nil end
   local part = prompt.Parent
   local bag = part and part.Parent
-  local folder = garbageFolder()
-  if folder and part:IsA("BasePart") and part.Name == "Prompt"
-   and bag and bag:IsA("Model") and bag.Name == "Dirty" and bag.Parent == folder then
-   return bag, part.Position
-  end
+  if not part or not part:IsA("BasePart") or part.Name ~= "Prompt"
+   or not bag or not bag:IsA("Model") or bag.Name ~= "Dirty"
+   or prompt.ActionText ~= "Dirty" then return nil end
+  return bag, part.Position
  end
+ local function registerPrompt(instance)
+  if instance:IsA("ProximityPrompt") then prompts[instance] = true end
+ end
+ for _, instance in ipairs(Workspace:GetDescendants()) do registerPrompt(instance) end
+ connect(Workspace.DescendantAdded, registerPrompt)
+ connect(Workspace.DescendantRemoving, function(instance)
+  prompts[instance], shown[instance], retryAt[instance] = nil, nil, nil
+ end)
  local function anyMinigame()
   local screen = playerGui:FindFirstChild("MiniGameUI")
   return screen and screen.Enabled
@@ -1206,12 +1241,16 @@ do
    and humanoid.Parent == player.Character and humanoid.Health > 0 and not humanoid.Sit
    and not anyMinigame()
  end
- local function inRange(prompt, root)
+ local function closeEnough(prompt, root)
   local bag, position = bagForPrompt(prompt)
-  if not bag or (position - root.Position).Magnitude > math.max(0, math.min(8, prompt.MaxActivationDistance) - 0.5) then
-   return false
-  end
-  -- Even prompts with sight checks disabled must not be activated through a wall.
+  if not bag then return false end
+  local offset = position - root.Position
+  return offset.Magnitude <= math.max(0, prompt.MaxActivationDistance - 0.5)
+   and Vector3.new(offset.X, 0, offset.Z).Magnitude <= 2
+ end
+ local function inRange(prompt, root)
+  if not closeEnough(prompt, root) or not shown[prompt] then return false end
+  local bag, position = bagForPrompt(prompt)
   local params = RaycastParams.new()
   params.FilterType = Enum.RaycastFilterType.Exclude
   params.FilterDescendantsInstances = {player.Character}
@@ -1219,18 +1258,12 @@ do
   return not hit or hit.Instance:IsDescendantOf(bag)
  end
  local function nearestBag(root)
-  local folder = garbageFolder()
-  if not folder then return nil end
   local selected, best = nil, 120
-  for _, bag in ipairs(folder:GetChildren()) do
-   if bag:IsA("Model") and bag.Name == "Dirty" then
-    local part = bag:FindFirstChild("Prompt")
-    local prompt = part and part:FindFirstChildOfClass("ProximityPrompt")
-    local _, position = bagForPrompt(prompt)
-    if position and (retryAt[prompt] or 0) <= os.clock() then
-     local distance = (position - root.Position).Magnitude
-     if distance < best then selected, best = prompt, distance end
-    end
+  for prompt in pairs(prompts) do
+   local _, position = bagForPrompt(prompt)
+   if position and (retryAt[prompt] or 0) <= os.clock() then
+    local distance = (position - root.Position).Magnitude
+    if distance < best then selected, best = prompt, distance end
    end
   end
   return selected
@@ -1239,6 +1272,7 @@ do
   if inRange(prompt, root) then return true end
   local _, destination = bagForPrompt(prompt)
   if not destination then return false end
+  takeMovementControl()
   local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
   path:ComputeAsync(root.Position, destination)
   if not canWalk(token, humanoid) or path.Status ~= Enum.PathStatus.Success then return false end
@@ -1258,10 +1292,18 @@ do
      progressAt, lastPosition = os.clock(), root.Position
     end
     if os.clock() - progressAt > 2.5 then return false end
-   until (root.Position - waypoint.Position).Magnitude < 2.5 or os.clock() > deadline
+   until (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(waypoint.Position.X, 0, waypoint.Position.Z)).Magnitude < 2.5 or os.clock() > deadline
    if os.clock() > deadline then return false end
   end
-  return inRange(prompt, root)
+  local deadline = os.clock() + 5
+  while canWalk(token, humanoid) and bagForPrompt(prompt) and os.clock() < deadline do
+   if inRange(prompt, root) then return true end
+   local _, position = bagForPrompt(prompt)
+   walkingHumanoid = humanoid
+   humanoid:MoveTo(Vector3.new(position.X, root.Position.Y, position.Z))
+   task.wait(0.1)
+  end
+  return false
  end
  local function collect(prompt, humanoid, root, token)
 
@@ -1276,7 +1318,7 @@ do
   local holdUntil = os.clock() + prompt.HoldDuration + 0.15
   while os.clock() < holdUntil do
    if anyMinigame() then break end
-   if not canWalk(token, humanoid) or not inRange(prompt, root) then return end
+   if not canWalk(token, humanoid) or not closeEnough(prompt, root) then return end
    task.wait(0.05)
   end
   if heldPrompt == prompt then
