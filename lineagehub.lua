@@ -69,9 +69,10 @@ end
 local garbageRead = (debug and debug.getupvalue) or getupvalue
 local garbageSupported = inspectConnections ~= nil and type(garbageRead) == "function"
 local releaseGarbageInput
+local stopGarbageWalk
 local garbageResumeAt = 0
 local garbageSettings = {
- name = "Auto garbage minigame", description = "Virtual hover — leaves your mouse free",
+ name = "Auto garbage", description = "hide menu to start",
  color = Color3.fromRGB(110, 225, 140), enabled = false,
  status = garbageSupported and "Garbage: OFF" or "Garbage needs getconnections and getupvalue.",
 }
@@ -85,22 +86,12 @@ local function garbageReadyStatus()
 end
 local function setGarbageEnabled(enabled, status)
  garbageSettings.enabled = enabled == true and garbageSupported
- if not garbageSettings.enabled and releaseGarbageInput then releaseGarbageInput() end
+ if not garbageSettings.enabled then
+  if releaseGarbageInput then releaseGarbageInput() end
+  if stopGarbageWalk then stopGarbageWalk() end
+ end
  garbageSettings.status = status or (not garbageSupported and "Garbage needs getconnections and getupvalue."
   or (garbageSettings.enabled and garbageReadyStatus() or "Garbage: OFF"))
- if updatePanel then updatePanel(hubVisible) end
-end
-
-local stopGarbageWalk
-local garbageWalkSettings = {
- name = "Auto garbage walk", description = "Nearby bags • normal walking speed",
- color = Color3.fromRGB(110, 225, 140), enabled = false, status = "Walk: OFF",
-}
-local function setGarbageWalkEnabled(enabled)
- garbageWalkSettings.enabled = enabled == true and garbageSupported
- if stopGarbageWalk then stopGarbageWalk() end
- if garbageWalkSettings.enabled then setGarbageEnabled(true) end
- garbageWalkSettings.status = garbageWalkSettings.enabled and "Walk: close the hub with Right Shift." or "Walk: OFF"
  if updatePanel then updatePanel(hubVisible) end
 end
 
@@ -109,7 +100,7 @@ local staminaWrite = (debug and debug.setupvalue) or setupvalue
 local staminaSupported = inspectConnections ~= nil and type(staminaRead) == "function" and type(staminaWrite) == "function"
 local restoreStamina
 local staminaSettings = {
- name = "Infinite stamina", description = "Locks local stamina at 100",
+ name = "Infinite stamina", description = "",
  color = Color3.fromRGB(245, 200, 80), enabled = false,
  status = staminaSupported and "Stamina: OFF" or "Stamina needs getconnections and upvalue read/write support.",
 }
@@ -247,28 +238,13 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	selectTab("VISUALS")
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
-	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 186)
-	autoStatus.Size = UDim2.new(1, 0, 0, 44)
-	autoStatus.TextWrapped = true
+
  local aimStatus = label(pages.AIM, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
  aimStatus.Position = UDim2.fromOffset(0, 200)
  aimStatus.Size = UDim2.new(1, 0, 0, 50)
  aimStatus.TextWrapped = true
- local garbageStatus = label(pages.AUTO, garbageSettings.status, 12, Color3.fromRGB(150, 166, 198))
- garbageStatus.Position = UDim2.fromOffset(0, 228)
- garbageStatus.Size = UDim2.new(1, 0, 0, 44)
- garbageStatus.TextWrapped = true
- local walkStatus = label(pages.AUTO, garbageWalkSettings.status, 12, Color3.fromRGB(150, 166, 198))
- walkStatus.Position = UDim2.fromOffset(0, 274)
- walkStatus.Size = UDim2.new(1, 0, 0, 44)
- walkStatus.TextWrapped = true
- local staminaStatus = label(pages.MISC, staminaSettings.status, 12, Color3.fromRGB(150, 166, 198))
- staminaStatus.Position = UDim2.fromOffset(0, 68)
- staminaStatus.Size = UDim2.new(1, 0, 0, 85)
- staminaStatus.TextWrapped = true
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "garbageWalk", "aim", "stamina"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -281,12 +257,12 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category = ({auto = autoSettings, aim = aimSettings, garbage = garbageSettings, garbageWalk = garbageWalkSettings, stamina = staminaSettings})[key] or categories[key]
+		local category = ({auto = autoSettings, aim = aimSettings, garbage = garbageSettings, stamina = staminaSettings})[key] or categories[key]
 		local accent = category.color
-		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage" or key == "garbageWalk") and pages.AUTO or cards))
+		local rowParent = key == "aim" and pages.AIM or (key == "stamina" and pages.MISC or ((key == "auto" or key == "garbage") and pages.AUTO or cards))
 		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
 		if key == "garbage" then row.Position = UDim2.fromOffset(0, 62) end
-		if key == "garbageWalk" then row.Position = UDim2.fromOffset(0, 124) end
+
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
@@ -296,10 +272,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(row.Activated:Connect(function()
 			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
 			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
-			elseif key == "garbage" then
-    setGarbageEnabled(not garbageSettings.enabled)
-    if not garbageSettings.enabled then setGarbageWalkEnabled(false) end
-   elseif key == "garbageWalk" then setGarbageWalkEnabled(not garbageWalkSettings.enabled)
+			elseif key == "garbage" then setGarbageEnabled(not garbageSettings.enabled)
 			elseif key == "stamina" then setStaminaEnabled(not staminaSettings.enabled)
 			else setCategory(key, not categories[key].enabled) end
 		end))
@@ -472,13 +445,11 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		panel.Visible = enabled == true and not loading
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
 		setSwitch("auto", autoSettings.enabled, false)
-		autoStatus.Text = autoSettings.status
+
 		setSwitch("garbage", garbageSettings.enabled, false)
-		garbageStatus.Text = garbageSettings.status
-  setSwitch("garbageWalk", garbageWalkSettings.enabled, false)
-  walkStatus.Text = garbageWalkSettings.status
+
 		setSwitch("stamina", staminaSettings.enabled, false)
-		staminaStatus.Text = staminaSettings.status
+
 		setSwitch("aim", aimSettings.enabled, false)
 		aimStatus.Text = aimSettings.status
 	end
@@ -542,7 +513,6 @@ local function doorAvailable(prompt, now)
 	local readyAt = prompt:GetAttribute("ReadyAt")
 	return type(readyAt) ~= "number" or readyAt <= now
 end
-
 
 local function updateGoldenBox(entry, visible)
 	if not visible then
@@ -1174,11 +1144,6 @@ do
  local retryAt = setmetatable({}, {__mode = "k"})
  local walkingHumanoid, heldPrompt
  local generation = 0
- local function status(message)
-  if garbageWalkSettings.status == message then return end
-  garbageWalkSettings.status = message
-  if updatePanel then updatePanel(hubVisible) end
- end
  stopGarbageWalk = function()
   generation += 1
   if heldPrompt then
@@ -1221,7 +1186,7 @@ do
   return screen and screen.Enabled
  end
  local function canWalk(token, humanoid)
-  return token == generation and garbageWalkSettings.enabled and garbageCanRun()
+  return token == generation and garbageSettings.enabled and garbageCanRun()
    and humanoid.Parent == player.Character and humanoid.Health > 0 and not humanoid.Sit
    and not anyMinigame()
  end
@@ -1283,13 +1248,13 @@ do
   return inRange(prompt, root)
  end
  local function collect(prompt, humanoid, root, token)
-  status("Walk: approaching a garbage bag…")
+
   if not approach(prompt, humanoid, root, token) then return end
   if not canWalk(token, humanoid) or not inRange(prompt, root) then return end
   humanoid:Move(Vector3.zero)
   humanoid:MoveTo(root.Position)
   walkingHumanoid = nil
-  status("Walk: holding the bag's interaction prompt…")
+
   heldPrompt = prompt
   prompt:InputHoldBegin()
   local holdUntil = os.clock() + prompt.HoldDuration + 0.15
@@ -1308,21 +1273,15 @@ do
   end
   if anyMinigame() then
    retryAt[prompt] = os.clock() + 60
-   status("Walk: waiting for the minigame to finish…")
-  else
-   status("Walk: bag did not start; trying another nearby bag.")
   end
  end
  task.spawn(function()
   while alive do
-   if not garbageWalkSettings.enabled or not garbageCanRun() then
+   if not garbageSettings.enabled or not garbageCanRun() then
     if walkingHumanoid or heldPrompt then stopGarbageWalk() end
-    if garbageWalkSettings.enabled then
-     status(hubVisible and "Walk: close the hub with Right Shift." or "Walk: waiting for auto garbage / text input.")
-    end
     task.wait(0.25)
    elseif anyMinigame() then
-    status("Walk: waiting for the minigame to finish…")
+
     task.wait(0.25)
    else
     local humanoid, root = characterParts()
@@ -1333,12 +1292,12 @@ do
      local ok, message = pcall(collect, prompt, humanoid, root, generation)
      stopGarbageWalk()
      if not ok then
-      status("Walk: could not use this bag; retrying another.")
+
       warn("Lineage Hub garbage walk: " .. tostring(message))
      end
      task.wait(0.5)
     else
-     status(root and "Walk: no available bags within 120 studs." or "Walk: waiting for your character.")
+
      task.wait(1)
     end
    end
