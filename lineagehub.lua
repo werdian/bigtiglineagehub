@@ -23,6 +23,21 @@ local categories = {
 }
 local gui, updatePanel, updateStockPanel
 local refreshPrompt, updateVisuals
+local aimGui
+local aimSettings = {
+ name = "Silent aim", description = "90 px radius • closest player",
+ color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false,
+ status = "Silent aim: checking weapon support…",
+}
+local function setAimEnabled(enabled)
+ aimSettings.enabled = enabled == true and aimSettings.ready
+ if aimGui then aimGui.Enabled = aimSettings.enabled end
+ if aimSettings.ready then
+  aimSettings.status = aimSettings.enabled and "Silent aim: ON — 90 px radius" or "Silent aim: OFF"
+ end
+ if updatePanel then updatePanel(hubVisible) end
+end
+
 local inspectConnections = type(getconnections) == "function" and getconnections or nil
 local autoSettings = {
 	name = "Auto drug minigame", description = "Clicks the active glowing box",
@@ -158,11 +173,15 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 180)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 68)
-	autoStatus.Size = UDim2.new(1, 0, 0, 65)
+	autoStatus.Position = UDim2.fromOffset(0, 128)
+	autoStatus.Size = UDim2.new(1, 0, 0, 44)
 	autoStatus.TextWrapped = true
+ local aimStatus = label(pages.AUTO, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
+ aimStatus.Position = UDim2.fromOffset(0, 178)
+ aimStatus.Size = UDim2.new(1, 0, 0, 50)
+ aimStatus.TextWrapped = true
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "auto"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "auto", "aim"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -175,10 +194,11 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		end
 	end
 	for index, key in ipairs(order) do
-		local category = key == "auto" and autoSettings or categories[key]
+		local category = key == "auto" and autoSettings or (key == "aim" and aimSettings or categories[key])
 		local accent = category.color
-		local rowParent = key == "auto" and pages.AUTO or cards
+		local rowParent = (key == "auto" or key == "aim") and pages.AUTO or cards
 		local row = new("TextButton", {LayoutOrder = index, Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false, Text = "", Active = true}, rowParent); corner(row, 9); new("UIStroke", {Color = Color3.fromRGB(44, 57, 82), Thickness = 1, Transparency = .35}, row)
+		if key == "aim" then row.Position = UDim2.fromOffset(0, 62) end
 		local name = label(row, category.name, 13, Color3.fromRGB(230, 235, 246), Enum.Font.GothamMedium); name.Position = UDim2.fromOffset(13, 9); name.Size = UDim2.new(1, -105, 0, 20)
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
@@ -187,6 +207,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		switches[key] = {track = track, thumb = thumb, state = state, accent = accent, tweens = {}}
 		keep(row.Activated:Connect(function()
 			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
+			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
 			else setCategory(key, not categories[key].enabled) end
 		end))
 		setSwitch(key, category.enabled == true, true)
@@ -311,6 +332,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		for key, category in pairs(categories) do setSwitch(key, category.enabled == true, false) end
 		setSwitch("auto", autoSettings.enabled, false)
 		autoStatus.Text = autoSettings.status
+		setSwitch("aim", aimSettings.enabled, false)
+		aimStatus.Text = aimSettings.status
 	end
 	return gui, updatePanel, updateStockPanel
 end
@@ -672,4 +695,120 @@ task.spawn(function()
 			task.wait(0.05)
 		end
 	end
+end)
+
+-- Keep the FOV in viewport pixels, independent of hub scaling and visibility.
+aimGui = Instance.new("ScreenGui")
+aimGui.Name = "LineageAimFOV"
+aimGui.IgnoreGuiInset = true
+aimGui.ResetOnSpawn = false
+aimGui.DisplayOrder = 29
+aimGui.Enabled = false
+aimGui.Parent = playerGui
+local circle = Instance.new("Frame")
+circle.Name = "FOV90"
+circle.AnchorPoint = Vector2.new(0.5, 0.5)
+circle.Position = UDim2.fromScale(0.5, 0.5)
+circle.Size = UDim2.fromOffset(180, 180)
+circle.BackgroundTransparency = 1
+circle.BorderSizePixel = 0
+circle.Parent = aimGui
+local round = Instance.new("UICorner")
+round.CornerRadius = UDim.new(1, 0)
+round.Parent = circle
+local outline = Instance.new("UIStroke")
+outline.Color = Color3.fromRGB(220, 235, 255)
+outline.Thickness = 1.5
+outline.Transparency = 0.15
+outline.Parent = circle
+local restoreProjectile
+connect(controller.Destroying, function()
+ aimSettings.enabled = false
+ aimGui:Destroy()
+ if restoreProjectile then restoreProjectile() end
+end)
+
+local function selectAimPart()
+ local camera = Workspace.CurrentCamera
+ if not camera then return nil end
+ local center = camera.ViewportSize * 0.5
+ local best, bestDistance = nil, 90 * 90
+ for _, candidate in ipairs(Players:GetPlayers()) do
+  if candidate ~= player then
+   local character = candidate.Character
+   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+   local part = character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+   if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart") then
+    local point, visible = camera:WorldToViewportPoint(part.Position)
+    if visible and point.Z > 0 then
+     local distance = (point.X - center.X)^2 + (point.Y - center.Y)^2
+     if distance <= bestDistance then best, bestDistance = part, distance end
+    end
+   end
+  end
+ end
+ return best
+end
+
+local function redirectDirections(directions, origin, position)
+ if type(directions) ~= "table" or typeof(origin) ~= "Vector3" then return directions end
+ local offset = position - origin
+ if offset.Magnitude < 0.001 then return directions end
+ local result = table.clone(directions)
+ for index, direction in pairs(directions) do
+  if typeof(direction) == "Vector3" then result[index] = offset.Unit * direction.Magnitude end
+ end
+ return result
+end
+
+task.spawn(function()
+ local modules = ReplicatedStorage:WaitForChild("Modules", 10)
+ local module = modules and modules:WaitForChild("ProjectileHandler", 10)
+ if not alive then return end
+ local success, handler = pcall(function() return module and require(module) end)
+ if not alive then return end
+ if not success or type(handler) ~= "table" or type(handler.SimulateProjectile) ~= "function" then
+  aimSettings.status = "Silent aim unavailable: projectile module could not load."
+  setAimEnabled(false)
+  return
+ end
+ local original = handler.SimulateProjectile
+ local function wrapped(self, ...)
+  local args = table.pack(...)
+  -- The inspected module uses argument 14 only for locally fired, damaging bullets.
+  if alive and aimSettings.enabled and args[14] ~= nil then
+   local character = player.Character
+   local owned = character and args[3] == character
+   for index = 1, 2 do
+    local object = args[index]
+    if character and typeof(object) == "Instance" and object:IsDescendantOf(character) then owned = true end
+   end
+   if owned then
+    local part = selectAimPart()
+    local muzzle = args[7]
+    if part and typeof(muzzle) == "Instance" and muzzle:IsA("Attachment") then
+     local visualOrigin = muzzle.WorldPosition
+     local origin = visualOrigin
+     if typeof(args[4]) == "Instance" then
+      local alternate = args[4]:FindFirstChild("GunFirePoint")
+      if alternate and alternate:IsA("Attachment") then origin = alternate.WorldPosition end
+     end
+     args[5] = redirectDirections(args[5], origin, part.Position)
+     args[6] = redirectDirections(args[6], visualOrigin, part.Position)
+    end
+   end
+  end
+  return original(self, table.unpack(args, 1, args.n))
+ end
+ local installed = pcall(function() handler.SimulateProjectile = wrapped end)
+ if not installed then
+  aimSettings.status = "Silent aim unavailable: projectile module is read-only."
+  setAimEnabled(false)
+  return
+ end
+ restoreProjectile = function()
+  if handler.SimulateProjectile == wrapped then handler.SimulateProjectile = original end
+ end
+ aimSettings.ready = true
+ setAimEnabled(false)
 end)
