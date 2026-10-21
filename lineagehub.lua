@@ -72,7 +72,7 @@ local releaseGarbageInput
 local stopGarbageWalk
 local garbageResumeAt = 0
 local garbageSettings = {
- name = "Auto garbage", description = "hide menu to start",
+ name = "Auto garbage", description = "hide menu to use",
  color = Color3.fromRGB(110, 225, 140), enabled = false,
  status = garbageSupported and "Garbage: OFF" or "Garbage needs getconnections and getupvalue.",
 }
@@ -239,17 +239,15 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 
- local aimStatus = label(pages.AIM, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
- aimStatus.Position = UDim2.fromOffset(0, 200)
- aimStatus.Size = UDim2.new(1, 0, 0, 50)
- aimStatus.TextWrapped = true
+
+
 
 	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
 		item.enabled = enabled
-		item.state.Text = enabled and "ON" or "OFF"; item.state.TextColor3 = enabled and item.accent or Color3.fromRGB(120, 134, 160)
+
 		local goal, thumbGoal = {BackgroundColor3 = enabled and item.accent or Color3.fromRGB(44, 53, 72)}, {Position = enabled and UDim2.new(1, -21, .5, -9) or UDim2.new(0, 3, .5, -9)}
 		for _, tween in ipairs(item.tweens) do tween:Cancel() end; item.tweens = {}
 		if instant then item.track.BackgroundColor3 = goal.BackgroundColor3; item.thumb.Position = thumbGoal.Position else
@@ -267,8 +265,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		local hint = label(row, category.description or category.label or "World marker", 10, Color3.fromRGB(126, 143, 173), Enum.Font.Gotham); hint.Position = UDim2.fromOffset(13, 29); hint.Size = UDim2.new(1, -105, 0, 16)
 		local track = new("Frame", {Size = UDim2.fromOffset(48, 24), Position = UDim2.new(1, -63, .5, -12), BackgroundColor3 = Color3.fromRGB(44, 53, 72)}, row); corner(track, 12)
 		local thumb = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = UDim2.new(0, 3, .5, -9), BackgroundColor3 = Color3.fromRGB(248, 250, 255)}, track); corner(thumb, 9)
-		local state = label(row, "OFF", 9, Color3.fromRGB(120, 134, 160), Enum.Font.GothamBold); state.TextXAlignment = Enum.TextXAlignment.Center; state.Position = UDim2.new(1, -62, 0, 38); state.Size = UDim2.fromOffset(48, 12)
-		switches[key] = {track = track, thumb = thumb, state = state, accent = accent, tweens = {}}
+
+		switches[key] = {track = track, thumb = thumb, accent = accent, tweens = {}}
 		keep(row.Activated:Connect(function()
 			if key == "auto" then setAutoEnabled(not autoSettings.enabled)
 			elseif key == "aim" then setAimEnabled(not aimSettings.enabled)
@@ -279,9 +277,22 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		setSwitch(key, category.enabled == true, true)
 	end
 
+ local aimOptions = new("TextButton", {Name = "AimOptions", Text = "Aim settings  ▾",
+  Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Color3.fromRGB(230, 235, 246),
+  BackgroundColor3 = Color3.fromRGB(23, 31, 50), AutoButtonColor = false,
+  Position = UDim2.fromOffset(0, 64), Size = UDim2.new(1, 0, 0, 32)}, pages.AIM)
+ corner(aimOptions, 9)
+ local aimSliders = new("Frame", {Name = "AimSliders", BackgroundTransparency = 1,
+  Position = UDim2.fromOffset(0, 104), Size = UDim2.new(1, 0, 0, 132), Visible = false}, pages.AIM)
+ local function toggleAimOptions()
+  aimSliders.Visible = not aimSliders.Visible
+  aimOptions.Text = aimSliders.Visible and "Aim settings  ▴" or "Aim settings  ▾"
+ end
+ keep(aimOptions.Activated:Connect(toggleAimOptions))
+
  local function createAimSlider(name, title, y, key, minimum, maximum, unit, setValue)
  local slider = new("Frame", {Name = name, BackgroundTransparency = 1,
-  Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 60)}, pages.AIM)
+  Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 60)}, aimSliders)
  local radiusLabel = label(slider, "", 12, Color3.fromRGB(230, 235, 246))
  radiusLabel.Size = UDim2.new(1, 0, 0, 20)
  local sliderInput = new("TextButton", {Text = "", BackgroundTransparency = 1, AutoButtonColor = false,
@@ -301,7 +312,12 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
   radiusLabel.Text = title .. ": " .. aimSettings[key] .. unit
  end
  local draggingSlider
+ keep(aimSliders:GetPropertyChangedSignal("Visible"):Connect(function() draggingSlider = nil end))
  local function moveSlider(input)
+  if not aimSliders.Visible or not pages.AIM.Visible or not panel.Visible then
+   draggingSlider = nil
+   return
+  end
   if sliderInput.AbsoluteSize.X <= 0 then return end
   local inset = game:GetService("GuiService"):GetGuiInset()
   local alpha = math.clamp((input.Position.X - inset.X - sliderInput.AbsolutePosition.X) / sliderInput.AbsoluteSize.X, 0, 1)
@@ -324,8 +340,8 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
  end))
  refreshRadius()
  end
- createAimSlider("FOVSlider", "FOV RADIUS", 66, "radius", 20, 300, " px", setAimRadius)
- createAimSlider("AimDistanceSlider", "MAX DISTANCE", 130, "maxDistance", 10, 1000, " m", setAimDistance)
+ createAimSlider("FOVSlider", "FOV RADIUS", 0, "radius", 20, 300, " px", setAimRadius)
+ createAimSlider("AimDistanceSlider", "MAX DISTANCE", 64, "maxDistance", 10, 1000, " m", setAimDistance)
 
 	local stockCard = new("Frame", {
 		Name = "DrugStock", Position = UDim2.fromOffset(0, 0),
@@ -451,7 +467,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		setSwitch("stamina", staminaSettings.enabled, false)
 
 		setSwitch("aim", aimSettings.enabled, false)
-		aimStatus.Text = aimSettings.status
+
 	end
 	return gui, updatePanel, updateStockPanel
 end
