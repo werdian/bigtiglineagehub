@@ -29,14 +29,14 @@ local refreshPrompt, updateVisuals
 local aimGui
 local aimSettings = {
  name = "Silent aim", description = "Closest player inside the FOV",
- color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false, radius = 90,
+ color = Color3.fromRGB(120, 180, 255), enabled = false, ready = false, radius = 90, maxDistance = 250,
  status = "Silent aim: checking weapon support…",
 }
 local function setAimEnabled(enabled)
  aimSettings.enabled = enabled == true and aimSettings.ready
  if aimGui then aimGui.Enabled = aimSettings.enabled end
  if aimSettings.ready then
-  aimSettings.status = aimSettings.enabled and ("Silent aim: ON — " .. aimSettings.radius .. " px radius") or "Silent aim: OFF"
+  aimSettings.status = aimSettings.enabled and ("Silent aim: ON — " .. aimSettings.radius .. " px / " .. aimSettings.maxDistance .. " m") or "Silent aim: OFF"
  end
  if updatePanel then updatePanel(hubVisible) end
 end
@@ -44,6 +44,10 @@ end
 local function setAimRadius(value)
  aimSettings.radius = math.clamp(math.floor(value + 0.5), 20, 300)
  if aimCircle then aimCircle.Size = UDim2.fromOffset(aimSettings.radius * 2, aimSettings.radius * 2) end
+ setAimEnabled(aimSettings.enabled)
+end
+local function setAimDistance(value)
+ aimSettings.maxDistance = math.clamp(math.floor(value + 0.5), 10, 1000)
  setAimEnabled(aimSettings.enabled)
 end
 local inspectConnections = type(getconnections) == "function" and getconnections or nil
@@ -145,9 +149,9 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local function label(parent, value, size, color, font)
 		return new("TextLabel", {BackgroundTransparency = 1, Text = value, TextColor3 = color, Font = font or Enum.Font.GothamMedium, TextSize = size, TextXAlignment = Enum.TextXAlignment.Left}, parent)
 	end
-	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(490, 440), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
+	local panel = new("Frame", {Position = UDim2.fromOffset(18, 72), Size = UDim2.fromOffset(490, 480), BackgroundColor3 = Color3.fromRGB(14, 20, 35), BackgroundTransparency = .04, Active = true}, gui)
 	corner(panel, 14); new("UIStroke", {Color = Color3.fromRGB(55, 72, 103), Thickness = 1, Transparency = .2}, panel)
-	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(490, 440), MaxSize = Vector2.new(520, 480)}, panel)
+	local scale = new("UIScale", {Scale = 1}, panel); new("UISizeConstraint", {MinSize = Vector2.new(490, 480), MaxSize = Vector2.new(520, 520)}, panel)
 	local header = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 52), Position = UDim2.fromOffset(12, 8), Active = true}, panel)
 	local title = label(header, "BigTig Lineage Hub", 17, Color3.fromRGB(245, 248, 255), Enum.Font.GothamBold); title.Size = UDim2.new(1, -42, 0, 24)
 	local subtitle = label(header, "VISUALS", 10, Color3.fromRGB(127, 145, 178)); subtitle.Position = UDim2.fromOffset(0, 26); subtitle.Size = UDim2.new(1, -42, 0, 18)
@@ -182,11 +186,11 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 248)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 	local autoStatus = label(pages.AUTO, autoSettings.status, 12, Color3.fromRGB(150, 166, 198))
-	autoStatus.Position = UDim2.fromOffset(0, 195)
+	autoStatus.Position = UDim2.fromOffset(0, 258)
 	autoStatus.Size = UDim2.new(1, 0, 0, 44)
 	autoStatus.TextWrapped = true
  local aimStatus = label(pages.AUTO, aimSettings.status, 12, Color3.fromRGB(150, 166, 198))
- aimStatus.Position = UDim2.fromOffset(0, 245)
+ aimStatus.Position = UDim2.fromOffset(0, 308)
  aimStatus.Size = UDim2.new(1, 0, 0, 50)
  aimStatus.TextWrapped = true
 
@@ -222,8 +226,9 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		setSwitch(key, category.enabled == true, true)
 	end
 
- local slider = new("Frame", {Name = "FOVSlider", BackgroundTransparency = 1,
-  Position = UDim2.fromOffset(0, 128), Size = UDim2.new(1, 0, 0, 60)}, pages.AUTO)
+ local function createAimSlider(name, title, y, key, minimum, maximum, unit, setValue)
+ local slider = new("Frame", {Name = name, BackgroundTransparency = 1,
+  Position = UDim2.fromOffset(0, y), Size = UDim2.new(1, 0, 0, 60)}, pages.AUTO)
  local radiusLabel = label(slider, "", 12, Color3.fromRGB(230, 235, 246))
  radiusLabel.Size = UDim2.new(1, 0, 0, 20)
  local sliderInput = new("TextButton", {Text = "", BackgroundTransparency = 1, AutoButtonColor = false,
@@ -237,17 +242,17 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
   BackgroundColor3 = Color3.fromRGB(245, 248, 255)}, rail)
  corner(knob, 7)
  local function refreshRadius()
-  local alpha = (aimSettings.radius - 20) / 280
+  local alpha = (aimSettings[key] - minimum) / (maximum - minimum)
   fill.Size = UDim2.fromScale(alpha, 1)
   knob.Position = UDim2.fromScale(alpha, .5)
-  radiusLabel.Text = "FOV RADIUS: " .. aimSettings.radius .. " px"
+  radiusLabel.Text = title .. ": " .. aimSettings[key] .. unit
  end
  local draggingSlider
  local function moveSlider(input)
   if sliderInput.AbsoluteSize.X <= 0 then return end
   local inset = game:GetService("GuiService"):GetGuiInset()
   local alpha = math.clamp((input.Position.X - inset.X - sliderInput.AbsolutePosition.X) / sliderInput.AbsoluteSize.X, 0, 1)
-  setAimRadius(20 + alpha * 280)
+  setValue(minimum + alpha * (maximum - minimum))
   refreshRadius()
  end
  keep(sliderInput.InputBegan:Connect(function(input)
@@ -265,6 +270,9 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
   if input == draggingSlider then draggingSlider = nil end
  end))
  refreshRadius()
+ end
+ createAimSlider("FOVSlider", "FOV RADIUS", 128, "radius", 20, 300, " px", setAimRadius)
+ createAimSlider("AimDistanceSlider", "MAX DISTANCE", 192, "maxDistance", 10, 1000, " m", setAimDistance)
 
 	local stockCard = new("Frame", {
 		Name = "DrugStock", Position = UDim2.fromOffset(0, 0),
@@ -372,7 +380,7 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 	keep(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragStart = nil end end))
 	local function fitViewport()
 		local viewport = availableSize()
-		scale.Scale = math.clamp(math.min(viewport.X / 530, viewport.Y / 480), .4, 1)
+		scale.Scale = math.clamp(math.min(viewport.X / 530, viewport.Y / 520), .4, 1)
 		local maxX = math.max(8, viewport.X - panel.AbsoluteSize.X - 8)
 		local maxY = math.max(8, viewport.Y - panel.AbsoluteSize.Y - 8)
 		panel.Position = UDim2.fromOffset(math.clamp(panel.Position.X.Offset, 8, maxX), math.clamp(panel.Position.Y.Offset, 8, maxY))
@@ -784,7 +792,8 @@ end)
 
 local function selectAimPart()
  local camera = Workspace.CurrentCamera
- if not camera then return nil end
+ local root = localRoot()
+ if not camera or not root then return nil end
  local center = camera.ViewportSize * 0.5
  local best, bestDistance = nil, aimSettings.radius * aimSettings.radius
  for _, candidate in ipairs(Players:GetPlayers()) do
@@ -792,7 +801,8 @@ local function selectAimPart()
    local character = candidate.Character
    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
    local part = character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
-   if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart") then
+   if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart")
+    and (part.Position - root.Position).Magnitude * 0.28 <= aimSettings.maxDistance then
     local point, visible = camera:WorldToViewportPoint(part.Position)
     if visible and point.Z > 0 then
      local distance = (point.X - center.X)^2 + (point.Y - center.Y)^2
