@@ -880,6 +880,8 @@ end)
 aimGui = Instance.new("ScreenGui")
 aimGui.Name = "LineageAimFOV"
 aimGui.IgnoreGuiInset = true
+aimGui.ScreenInsets = Enum.ScreenInsets.None
+aimGui.ClipToDeviceSafeArea = false
 aimGui.ResetOnSpawn = false
 aimGui.DisplayOrder = 29
 aimGui.Enabled = false
@@ -888,7 +890,7 @@ local circle = Instance.new("Frame")
 aimCircle = circle
 circle.Name = "AimFOVCircle"
 circle.AnchorPoint = Vector2.new(0.5, 0.5)
-circle.Position = UDim2.fromScale(0.5, 0.5)
+circle.Position = UDim2.fromOffset(0, 0)
 circle.Size = UDim2.fromOffset(aimSettings.radius * 2, aimSettings.radius * 2)
 circle.BackgroundTransparency = 1
 circle.BorderSizePixel = 0
@@ -915,12 +917,27 @@ local aimExcludedUserIds = {
  [154182558] = true,
  [127895777] = true,
 }
+local function aimViewportCenter(camera)
+ return camera.ViewportSize * 0.5
+end
+local function alignAimCircle()
+ local camera = Workspace.CurrentCamera
+ if not camera or not aimCircle then return end
+ local center = aimViewportCenter(camera)
+ aimCircle.Position = UDim2.fromOffset(center.X, center.Y)
+end
+alignAimCircle()
+local aimRenderBinding = "LineageFirstPersonAimCenter"
+game:GetService("RunService"):BindToRenderStep(aimRenderBinding, Enum.RenderPriority.Camera.Value + 1, alignAimCircle)
+table.insert(cleanupActions, function()
+ game:GetService("RunService"):UnbindFromRenderStep(aimRenderBinding)
+end)
 local aimRandom = Random.new()
 local function selectAimPart()
  local camera = Workspace.CurrentCamera
  local root = localRoot()
  if not camera or not root then return nil end
- local center = camera.ViewportSize * 0.5
+ local center = aimViewportCenter(camera)
  local bestHead, bestBody
  local bestDistance = aimSettings.radius * aimSettings.radius
  local function inRange(part)
