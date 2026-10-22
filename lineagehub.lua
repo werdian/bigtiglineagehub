@@ -18,6 +18,7 @@ local alive, hubVisible = true, true
 local connections, watched, entries = {}, {}, {}
 local cleanupActions = {}
 local categories = {
+ gunparts = {name = "Gun quest parts", label = "Gun part", description = "Glock, M1911, P320 and Speed Loader", color = Color3.fromRGB(255, 205, 80), enabled = false},
  quests = {name = "Quest NPCs", label = "Quest NPC", description = "Quest names and distances", color = Color3.fromRGB(65, 220, 245), enabled = false},
  players = {name = "Player ESP", description = "Team color, distance and held item", color = Color3.fromRGB(255, 55, 65), enabled = false},
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
@@ -238,13 +239,13 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(button.Activated:Connect(function() selectTab(name) end))
 	end
 	selectTab("VISUALS")
-	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
+	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 365)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 
 
 
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina", "restocks"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "gunparts", "auto", "garbage", "aim", "stamina", "restocks"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
@@ -483,7 +484,33 @@ end
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 
+local function classifyGunPart(prompt)
+ local quest = Workspace:FindFirstChild("Quest")
+ local options = quest and quest:FindFirstChild("Quest Option")
+ if not options or not prompt:IsDescendantOf(options) then return end
+ local gun = prompt.Parent
+ while gun and gun.Parent ~= options do gun = gun.Parent end
+ if not gun then return end
+ local gunName = ({Glock = "Glock", M1911 = "M1911", P320 = "P320", Magnum = "Magnum"})[gun.Name]
+ if not gunName then return end
+ local folder = gun:FindFirstChild("ชิ้นส่วน") or gun
+ if not prompt:IsDescendantOf(folder) then return end
+ local point = prompt.Parent
+ while point and point.Parent ~= folder do point = point.Parent end
+ local anchor = prompt:FindFirstAncestorWhichIsA("BasePart")
+ if not point or not anchor or not (point:IsA("Model") or point:IsA("BasePart")) then return end
+ local partName = point.Name
+ if gun.Name == "P320" then
+  partName = ({Mag = "Magazine", H = "Frame", Barrel = "Barrel", Slide = "Slide"})[point.Name] or point.Name
+ elseif tonumber(partName) then
+  partName = "Part " .. partName
+ end
+ return "gunparts", point, anchor, gunName .. " · " .. partName
+end
+
 local function classify(prompt)
+ local partKey, partTarget, partAnchor, partLabel = classifyGunPart(prompt)
+ if partKey then return partKey, partTarget, partAnchor, partLabel end
 	local model = prompt:FindFirstAncestorOfClass("Model")
 	if model then
 		local head = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
