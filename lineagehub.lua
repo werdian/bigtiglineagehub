@@ -908,6 +908,13 @@ table.insert(cleanupActions, function()
  if restoreProjectile then restoreProjectile() end
 end)
 
+local aimExcludedUserIds = {
+ [120255231] = true,
+ [4680553735] = true,
+ [932779866] = true,
+ [154182558] = true,
+ [127895777] = true,
+}
 local aimRandom = Random.new()
 local function selectAimPart()
  local camera = Workspace.CurrentCamera
@@ -927,7 +934,7 @@ local function selectAimPart()
   return (point.X - center.X)^2 + (point.Y - center.Y)^2
  end
  for _, candidate in ipairs(Players:GetPlayers()) do
-  if candidate ~= player then
+  if candidate ~= player and not aimExcludedUserIds[candidate.UserId] then
    local character = candidate.Character
    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
    if humanoid and humanoid.Health > 0 then
