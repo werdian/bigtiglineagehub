@@ -19,7 +19,7 @@ local connections, watched, entries = {}, {}, {}
 local cleanupActions = {}
 local categories = {
  gunparts = {name = "Gun quest parts", label = "Gun part", description = "Glock, M1911, P320 and Speed Loader", color = Color3.fromRGB(255, 205, 80), enabled = false},
- quests = {name = "Quest NPCs", label = "Quest NPC", description = "Quest names and distances", color = Color3.fromRGB(65, 220, 245), enabled = false},
+ quests = {name = "Quest parts and NPCs", label = "Quest NPC", description = "Quest NPCs and gun parts", color = Color3.fromRGB(65, 220, 245), enabled = false},
  players = {name = "Player ESP", description = "Team color, distance and held item", color = Color3.fromRGB(255, 55, 65), enabled = false},
 	buyers = {name = "Drug buyers", label = "Buying NPC", color = Color3.fromRGB(255, 55, 65), enabled = true},
 	merchant = {name = "Traveling merchant", label = "พ่อค้าพเนจร", description = "appears every 20 minutes", color = Color3.fromRGB(180, 70, 255), enabled = true},
@@ -182,6 +182,7 @@ end
 
 local function setCategory(key, enabled)
 	categories[key].enabled = enabled
+ if key == "quests" then categories.gunparts.enabled = enabled end
 	if updatePlayerESP then updatePlayerESP() end
 	updatePanel(hubVisible)
 	updateVisuals()
@@ -239,13 +240,13 @@ local function buildPanel(playerGui, categories, connections, setCategory, setHu
 		keep(button.Activated:Connect(function() selectTab(name) end))
 	end
 	selectTab("VISUALS")
-	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 365)}, pages.VISUALS)
+	local cards = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 310)}, pages.VISUALS)
 	new("UIListLayout", {Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder}, cards)
 
 
 
 
-	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "gunparts", "auto", "garbage", "aim", "stamina", "restocks"}
+	local switches, order = {}, {"buyers", "merchant", "doors", "players", "quests", "auto", "garbage", "aim", "stamina", "restocks"}
 	local function setSwitch(key, enabled, instant)
 		local item = switches[key]; if not item then return end
 		if item.enabled == enabled and not instant then return end
