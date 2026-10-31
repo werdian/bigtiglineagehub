@@ -1,7 +1,7 @@
-Basic Script Hub for a game
+# Basic Script Hub for a Game
 
--Contains visual indicators for ingame POI 
--Object tracker with updated ingame stock indicators
--Rewrites ingame aim with configurable limit
--Using ingame event connections
--GUI with features and toggle switches
+- Contains visual indicators for in-game points of interest.
+- Tracks objects and updates in-game stock indicators.
+- Rewrites aiming parameters with configurable targeting limits.
+- Uses in-game event connections to handle updates.
+- Provides a GUI with feature controls and toggle switches.
